@@ -478,6 +478,18 @@ function srvDown(e){
       :'Cannot reach the editor server ('+((e&&e.message)||e)+'). Is the start_editor.py window still open? You can also pick the folder manually below.'));
   $('lib').style.display='block';}
 async function fetchLib(){
+  const r = await fetch('/library.json', { cache: 'no-store' });
+
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+
+  const j = await r.json();
+
+  if (!j || !Array.isArray(j.bgm) || !Array.isArray(j.sfx)) {
+    throw new Error('unexpected reply');
+  }
+
+  return j;
+}
   const r=await fetch('api/library',{cache:'no-store'});
   if(!r.ok)throw new Error('HTTP '+r.status);
   const j=await r.json();if(!j||!Array.isArray(j.bgm)||!Array.isArray(j.sfx))throw new Error('unexpected reply');
