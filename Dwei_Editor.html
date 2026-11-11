@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dwei’s Editor</title>
+<style>
+:root{--bg:#0e0f11;--panel:#16171a;--raise:#1f2125;--line:#2a2d33;--tx:#ececee;--mut:#8d929b;--acc:#b8ff3d;--r:10px;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 "Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;display:flex;flex-direction:column;height:100dvh}
+header{display:flex;align-items:baseline;gap:14px;padding:11px 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+header b{font-size:17px;font-weight:700;letter-spacing:-.01em}header b span{color:var(--acc)}
+header small{color:var(--mut);font-size:12px}
+main{flex:1;min-height:0;display:grid;grid-template-columns:352px minmax(0,1fr) 344px}
+main>section{overflow:auto;min-height:0;padding:14px 16px;scrollbar-width:thin;scrollbar-color:#33363d transparent}
+main>section:first-child{border-right:1px solid var(--line);background:#121316}
+main>.side{border-left:1px solid var(--line);background:#121316}
+@media(max-width:1180px) and (min-width:861px){main{grid-template-columns:352px minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(0,40vh)}main>section:first-child{grid-row:1/3}main>.side{border-left:0;border-top:1px solid var(--line)}}
+@media(max-width:860px){body{height:auto}main{display:block}main>section{overflow:visible}main>section:first-child{border-right:0}main>.side{border-left:0;border-top:1px solid var(--line)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 10px;font-size:14px;font-weight:650;color:var(--tx);display:flex;align-items:center;gap:8px}
+.card h3::before{content:"";width:3px;height:14px;border-radius:2px;background:var(--acc)}
+label{display:block;color:var(--mut);font-size:12px;margin:10px 0 4px}
+input,select,textarea,button{font:inherit;color:var(--tx);background:var(--raise);border:1px solid var(--line);border-radius:7px;padding:7px 10px;width:100%;transition:border-color .12s,background .12s}
+input:hover,select:hover,textarea:hover{border-color:#3b3f47}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+input[type=checkbox]{width:auto;accent-color:var(--acc)}
+input[type=file]{padding:6px;font-size:12px}
+input[type=color]{height:34px;padding:3px}
+input[type=range]{padding:0;height:18px;background:none;border:0;-webkit-appearance:none;appearance:none;accent-color:var(--acc)}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:#33363d}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;margin-top:-5px;border-radius:50%;background:var(--acc);border:2px solid var(--panel)}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#33363d}
+input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--acc);border:2px solid var(--panel)}
+textarea{min-height:110px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+button{cursor:pointer;width:auto;font-weight:600}
+button:hover{background:#2a2d33}
+button.p{background:var(--acc);color:#10120a;border-color:var(--acc);font-weight:700}
+button.p:hover{background:#c8ff63}
+button:active{transform:translateY(1px)}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.row>*{flex:1;min-width:0}
+.sub{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--line)}
+.sub>b{display:block;font-size:13px;font-weight:650}
+.stage{display:flex;flex-direction:column;align-items:center}
+canvas{width:min(100%,420px,calc((100dvh - 215px)*9/16));aspect-ratio:9/16;background:#000;border-radius:14px;border:1px solid var(--line);box-shadow:0 18px 50px rgba(0,0,0,.55)}
+.tl{width:100%;max-width:760px;margin-top:14px}
+.trk{position:relative;height:26px;background:#1d1f23;border-radius:6px;margin:4px 0;overflow:hidden}
+.trk i{position:absolute;top:2px;bottom:2px;border-radius:4px;font-style:normal;font-size:10px;padding:2px 4px;overflow:hidden;white-space:nowrap;cursor:pointer}
+.tn{display:flex;gap:8px;font-size:11px;color:var(--mut);align-items:center}.tn span{width:60px}.tn div{flex:1}
+.ruler{position:relative;cursor:pointer}.ph{position:absolute;top:0;bottom:0;width:2px;background:var(--acc);pointer-events:none}
+#rep{white-space:pre-wrap;font-size:12px;color:var(--mut);max-height:150px;overflow:auto}
+.note{font-size:12px;color:var(--mut);margin-top:6px}
+.hooklist{display:grid;gap:5px;margin-top:8px;max-height:230px;overflow:auto;scrollbar-width:thin;scrollbar-color:#33363d transparent}
+.hooklist button{width:100%;text-align:left;font-size:12px;font-weight:500;display:flex;gap:8px;align-items:baseline}
+.hooklist button b{color:var(--mut);font-weight:600;white-space:nowrap}
+.hooklist button.on{border-color:var(--acc);background:#1c2410}
+.hooklist button.on b,.hooklist button em{color:var(--acc)}
+.hooklist button em{font-style:normal;font-size:11px;font-weight:700;white-space:nowrap}
+.bar{display:flex;gap:10px;width:min(100%,420px);margin-top:12px}.bar>*{flex:1}
+</style>
+</head>
+<body>
+<header><b>Dwei’s <span>Editor</span></b><small>Upload, transcribe, caption, add B-roll, export</small></header>
+<main>
+<section>
+ <div class="card"><h3>1 · Source video</h3>
+  <input type="file" id="src" accept="video/*">
+  <div class="row"><div><label>Start (s)</label><input type="number" id="st" value="0" min="0" step="0.1"></div>
+  <div><label>Max length (s)</label><input type="number" id="ln" value="30" min="3" max="90"></div></div>
+  <div class="row" style="margin-top:8px"><label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--tx);font-size:13px"><input type="checkbox" id="cut"> ✂ Auto-cut silence</label></div>
+  <div class="row"><div><label>Cut strength</label><input type="range" id="sth" min="12" max="40" value="26"></div>
+  <div><label>Min silence to cut</label><select id="sgp"><option value="0.25">0.25 s (tight)</option><option value="0.35" selected>0.35 s</option><option value="0.5">0.5 s</option><option value="0.8">0.8 s (gentle)</option></select></div></div>
+  <div class="note" id="sn">Removes pauses so the clip jumps from speech to speech. Max length = final length after cuts.</div>
+  <button id="hook" class="p" style="margin-top:8px;width:100%">✨ Find hook lines</button>
+  <div class="note" id="hkn">Listens to the first 3 minutes and lists every spoken line. The top 3 are suggested, and the best is applied first. Click any line to start the clip there instead.</div>
+  <div id="hooks" class="hooklist"></div>
+  <label>Picture focus, left ↔ right</label><input type="range" id="cx" min="0" max="1" step="0.01" value="0.5">
+ </div>
+ <div class="card"><h3>Frame · Hook · Handle</h3>
+  <label>Video ratio inside the reel</label>
+  <select id="rt"><option value="1:1">1:1 (square)</option><option value="7:6" selected>7:6 (like reference)</option><option value="4:5">4:5</option><option value="4:3">4:3</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="full">Full screen (no frame)</option></select>
+  <label>Top hook text</label>
+  <textarea id="hk" style="min-height:64px;font-family:inherit;font-size:13px">Cortisol could be sabotaging your steroid cycle.</textarea>
+  <label>Bottom text (channel / handle)</label>
+  <input type="text" id="hd" value="yt @diagofit">
+  <div class="row"><div><label>Hook size</label><input type="range" id="hs" min="40" max="110" value="76"></div>
+  <div><label>Video width</label><input type="range" id="vw" min="60" max="100" value="100"></div></div>
+  <div class="sub"><b>Adjust video position</b>
+  <label>Move video up ↔ down</label><input type="range" id="cy" min="-1" max="1" step="0.02" value="0">
+  <div class="note">Slides the picture inside the frame, so nothing turns black. Drag right to bring the top of the video (forehead) into view. It also works with zoom.</div>
+  <label>Move frame in the reel, up ↔ down</label><input type="range" id="vo" min="-400" max="400" step="2" value="0">
+  <div class="note">Moves the whole video frame. This leaves black space above or below it, so use it only to adjust spacing around the hook text.</div>
+  <button id="vreset" style="margin-top:10px;width:100%">Reset position</button></div>
+  <div class="note">Canvas is always 1080×1920 (Instagram Reel). Black background, hook on top, video in the middle, handle below.</div>
+ </div>
+ <div class="card"><h3>2 · Transcript</h3>
+  <textarea id="tr" placeholder="Paste SRT, VTT, [0:05] lines, or plain text (plain text is spread evenly and marked approximate)"></textarea>
+  <input type="file" id="trf" accept=".srt,.vtt,.txt">
+  <button id="asr" class="p" style="margin-top:8px;width:100%">Auto-transcribe from video</button>
+  <div class="note" id="asrn">Uses Whisper tiny.en in your browser. First run downloads about 40 MB.</div>
+  <div class="note" id="trn"></div>
+ </div>
+ <div class="card"><h3>4 · B-roll</h3>
+  <input type="file" id="br" accept="video/*,image/*" multiple>
+  <div class="row" style="margin-top:8px"><button id="auto">Auto-place</button><button id="clr">Clear</button></div>
+  <div class="note">Auto-place is deterministic (round-robin, no adjacent repeats). Click a B-roll block on the timeline to remove it. Semantic AI matching needs the worker (guide §13).</div>
+ </div>
+</section>
+<section class="stage">
+ <canvas id="cv" width="1080" height="1920"></canvas>
+ <div class="bar">
+  <button id="play" class="p">▶ Preview</button><button id="exp">Export WebM</button>
+ </div>
+ <div class="note" id="stat" style="margin-top:6px">Load a video to begin.</div>
+ <div class="card tl">
+  <h3>Timeline</h3>
+  <div class="tn"><span></span><div class="trk ruler" id="ruler" style="height:18px"><div class="ph" id="ph"></div></div></div>
+  <div class="tn"><span>Main</span><div class="trk" id="t1"></div></div>
+  <div class="tn"><span>B-roll</span><div class="trk" id="t2"></div></div>
+  <div class="tn"><span>Captions</span><div class="trk" id="t3"></div></div>
+  <div class="tn"><span>SFX</span><div class="trk" id="t4"></div></div>
+  <div class="tn"><span>Music</span><div class="trk" id="t5"></div></div>
+ </div>
+ <div class="card tl"><h3>Edit report</h3><div id="rep">No edit yet.</div></div>
+</section>
+<section class="side">
+<div class="card"><h3>3 · Captions</h3>
+  <div><label>Style</label><select id="sty"><option value="kinetic">Kinetic (bold + keyword)</option><option value="karaoke">Karaoke (spoken word)</option><option value="box">Box subtitle</option><option value="minimal">Minimal clean</option><option value="redkw">Red keyword</option></select></div>
+  <div class="row"><div><label>Words per cue</label><select id="wn"><option>2</option><option selected>3</option><option>4</option></select></div>
+  <div><label>Font</label><select id="fn"><option value="Impact, Haettenschweiler, sans-serif">Impact</option><option value="Arial Black, Arial, sans-serif">Arial Black</option><option value="Georgia, serif">Georgia</option></select></div></div>
+  <label>Size</label><input type="range" id="fs" min="50" max="150" value="96">
+  <label>Caption timing offset (s) · + delays, − earlier</label><input type="range" id="co" min="-0.5" max="0.5" step="0.01" value="0">
+  <label>Vertical position</label><input type="range" id="fy" min="30" max="90" value="84">
+  <div class="row"><label><input type="checkbox" id="up" checked> ALL CAPS</label><div><input type="color" id="hc" value="#ffe14d"></div></div>
+ </div>
+ <div class="card"><h3>5 · Zoom · Music · Hook SFX</h3>
+  <label>Start effect</label><select id="zm"><option value="none">None</option><option value="in">Zoom in</option><option value="out">Zoom out</option></select>
+  <div class="row"><div><label>Strength %</label><input type="range" id="zs" min="5" max="50" value="20"></div><div><label>Duration (s)</label><input type="range" id="zd" min="0.5" max="8" step="0.1" value="2"></div></div>
+  <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="zw"> Keep zooming across the whole clip</label>
+  <input type="file" id="libf" webkitdirectory multiple hidden>
+  <div class="note" id="libn">Looking for the editor server…</div>
+  <label>Background music</label><select id="bsel"><option value="auto">Auto · best track</option></select>
+  <label>Music volume</label><input type="range" id="bv" min="0.05" max="0.6" step="0.01" value="0.22">
+  <div class="row" style="margin-top:8px"><button id="bgmbtn" class="p">Auto BGM</button><button id="sfxbtn" class="p">Auto Hook SFX</button></div>
+  <button id="lib" style="margin-top:8px;width:100%;display:none">Server not found · pick project folder manually</button>
+  <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="sfxcut" checked> Also add a whoosh on B-roll cuts</label>
+ </div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id), cv=$('cv'), g=cv.getContext('2d'), W=1080, H=1920;
+const vid=document.createElement('video'); vid.playsInline=true; vid.crossOrigin='anonymous';
+let wantLen=0, cutK=null, envC=null, cues=[], segs=[], broll=[], approx=false, playing=false, raf=0, recorder=null, actx=null, adest=null, wired=false;
+const cols=['#b8ff3d','#5ec8ff','#ff8f5e','#d68bff'];
+const clipLen=()=>{if(cutK){const l=cutK[cutK.length-1];return l.o+l.b-l.a;}return Math.max(1,Math.min(+$('ln').value||30,(vid.duration||0)-(+$('st').value||0)));};
+const t0=()=>+$('st').value||0;
+const ranges=()=>cutK||[{a:t0(),b:t0()+clipLen(),o:0}];
+const srcLen=()=>cutK?cutK[cutK.length-1].b-t0():clipLen();
+function otime(ts){const R=ranges();for(const r of R){if(ts<r.a)return r.o;if(ts<=r.b)return r.o+ts-r.a;}const l=R[R.length-1];return l.o+l.b-l.a;}
+function stime(o){const R=ranges();for(const r of R){if(o<=r.o+r.b-r.a)return r.a+Math.max(0,o-r.o);}return R[R.length-1].b;}
+function makeRanges(db,step,st,want,sens,minGap,durEnd){
+  const i0=Math.floor(st/step), iE=Math.min(db.length,Math.floor(Math.min(durEnd,st+want*6)/step));
+  if(iE-i0<5)return null;
+  const win=Array.from(db.slice(i0,Math.min(iE,i0+Math.ceil(want*3/step)))).sort((a,b)=>a-b);
+  const thr=win[Math.floor(win.length*0.9)]-sens;
+  const runs=[];let s=-1;
+  for(let i=i0;i<iE;i++){const v=db[i]>thr;if(v&&s<0)s=i;if(!v&&s>=0){runs.push([s*step,i*step]);s=-1;}}
+  if(s>=0)runs.push([s*step,iE*step]);
+  const m=[];runs.forEach(r=>{const l=m[m.length-1];if(l&&r[0]-l[1]<minGap)l[1]=r[1];else m.push([r[0],r[1]]);});
+  const out=[];m.filter(r=>r[1]-r[0]>=0.15).forEach(r=>{const a=Math.max(st,r[0]-0.08),b=Math.min(durEnd,r[1]+0.12),l=out[out.length-1];if(l&&a<=l.b+0.02)l.b=Math.max(l.b,b);else out.push({a,b});});
+  let tot=0;const R=[];
+  for(const r of out){const len=r.b-r.a;if(tot+len>=want){R.push({a:r.a,b:r.a+(want-tot),o:tot});tot=want;break;}R.push({a:r.a,b:r.b,o:tot});tot+=len;}
+  return R.length?R:null;
+}
+async function getEnv(){
+  const f=$('src').files[0];if(!f)return null;if(envC&&envC.f===f)return envC;
+  const ac=new (window.AudioContext||window.webkitAudioContext)();
+  const dec=await ac.decodeAudioData(await f.arrayBuffer());ac.close();
+  const hop=Math.round(dec.sampleRate*0.02),n=Math.floor(dec.length/hop),db=new Float32Array(n),chs=[];
+  for(let c=0;c<dec.numberOfChannels;c++)chs.push(dec.getChannelData(c));
+  for(let i=0;i<n;i++){let sum=0;for(const d of chs){for(let j=i*hop;j<(i+1)*hop;j++){const v=d[j];sum+=v*v;}}db[i]=20*Math.log10(Math.sqrt(sum/(hop*chs.length))+1e-6);}
+  const so=Array.from(db).sort((a,b)=>a-b);return envC={f,db,step:hop/dec.sampleRate,thr:so[Math.floor(so.length*0.9)]-(+$('sth').value)};
+}
+async function recut(){
+  if(!$('cut').checked){cutK=null;$('sn').textContent='Removes pauses so the clip jumps from speech to speech. Max length = final length after cuts.';return;}
+  try{
+    $('sn').textContent='Analyzing audio...';
+    const E=await getEnv();if(!E){cutK=null;$('sn').textContent='Load a source video first.';$('cut').checked=false;return;}
+    const want=wantLen||+$('ln').value||30, st=t0();
+    const R=makeRanges(E.db,E.step,st,want,+$('sth').value,+$('sgp').value,Math.min(vid.duration||1e9,E.db.length*E.step));
+    if(!R){cutK=null;$('sn').textContent='No speech found after the start time.';return;}
+    cutK=R; const last=R[R.length-1], out=last.o+last.b-last.a, removed=(last.b-st)-out;
+    $('sn').textContent='Cut '+Math.max(0,R.length-1)+' pauses'+(R[0].a>st+0.05?' + leading silence':'')+' · removed '+removed.toFixed(1)+'s · final length '+out.toFixed(1)+'s'+(out<want-0.3?' (video ends before '+want+'s)':'');
+  }catch(e){console.error(e);cutK=null;$('sn').textContent='Silence analysis failed: '+(e.message||e);}
+}
+
+function tsec(s){const p=s.replace(',','.').split(':').map(Number);return p.reduce((a,v)=>a*60+v,0);}
+function parseTr(txt){
+  const out=[]; approx=false; txt=txt.replace(/\r/g,'').replace(/^WEBVTT.*\n/,'');
+  const re=/(\d+:\d+(?::\d+)?[.,]\d+)\s*-->\s*(\d+:\d+(?::\d+)?[.,]\d+)[^\n]*\n([\s\S]*?)(?=\n\n|\n*$)/g; let m;
+  while((m=re.exec(txt))) out.push({s:tsec(m[1]),e:tsec(m[2]),text:m[3].replace(/\n/g,' ').replace(/<[^>]+>/g,'').trim()});
+  if(!out.length){
+    const lines=txt.split('\n').map(l=>l.trim()).filter(Boolean), ts=[];
+    lines.forEach(l=>{const a=l.match(/^\[(\d+:\d+(?::\d+)?)(?:\s*->\s*(\d+:\d+(?::\d+)?))?\]\s*(.*)$/); if(a) ts.push({s:tsec(a[1]),e:a[2]?tsec(a[2]):null,text:a[3]});});
+    if(ts.length){ts.forEach((x,i)=>{if(x.e==null)x.e=i+1<ts.length?ts[i+1].s:x.s+3;});return ts;}
+    approx=true;
+    const sents=txt.replace(/\s+/g,' ').match(/[^.!?]+[.!?]*/g)||[]; const a=t0(), d=srcLen(), tot=sents.join('').length||1; let c=a;
+    sents.forEach(s=>{const dd=d*s.length/tot; out.push({s:c,e:c+dd,text:s.trim()}); c+=dd;});
+  }
+  return out.filter(x=>x.text);
+}
+let asrW=[];
+function snap(sg){const E=envC;if(!E)return;const v=t=>E.db[Math.max(0,Math.round(t/E.step))]>E.thr;
+  let a=sg.s-0.3;while(a<sg.s+0.4&&!v(a))a+=E.step;if(a<sg.s+0.4)sg.s=a;
+  let b=sg.e+0.3;while(b>sg.e-0.4&&!v(b))b-=E.step;if(b>sg.e-0.4&&b>sg.s+0.2)sg.e=b;}
+function wordTimes(sg){
+  const w=sg.text.split(/\s+/).filter(Boolean), inn=asrW.filter(x=>x.s>=sg.s-0.05&&x.s<sg.e+0.05);
+  if(inn.length&&inn.length===w.length)return w.map((t,i)=>({t,s:inn[i].s,e:inn[i].e}));
+  snap(sg);const wt=w.map(x=>x.length+2),tot=wt.reduce((a,b)=>a+b,0),D=sg.e-sg.s;let c=sg.s;
+  return w.map((t,i)=>{const d=D*wt[i]/tot,r={t,s:c,e:c+d};c+=d;return r;});
+}
+function build(){
+  segs=parseTr($('tr').value); cues=[]; const n=+$('wn').value;
+  segs.forEach(sg=>{const wt=wordTimes(sg);
+    for(let i=0;i<wt.length;i+=n){const grp=wt.slice(i,i+n);cues.push({s:grp[0].s,e:grp[grp.length-1].e,words:grp.map(x=>x.t),wt:grp});}});
+  cues.forEach((c,i)=>{const nx=cues[i+1];if(nx&&nx.s>c.e&&nx.s-c.e<0.25)c.e=nx.s;});
+  $('trn').textContent=segs.length?(segs.length+' segments, '+cues.length+' caption cues'+(approx?' · timings approximate (estimated)':(asrW.length?' · word-level timing':''))):'';
+  renderTL(); draw(); queueAuto();
+}
+const FR={'1:1':1,'7:6':7/6,'4:5':4/5,'4:3':4/3,'16:9':16/9,'9:16':9/16};
+const SANS='"Helvetica Neue", Helvetica, Arial, sans-serif';
+function wrapLines(txt,maxW){const words=txt.split(/\s+/).filter(Boolean),lines=[];let cur='';
+  words.forEach(w=>{const t=cur?cur+' '+w:w;if(g.measureText(t).width>maxW&&cur){lines.push(cur);cur=w;}else cur=t;});
+  if(cur)lines.push(cur);return lines;}
+function layout(){
+  const m=$('rt').value; if(m==='full')return{full:true,x:0,y:0,w:W,h:H};
+  const r=FR[m]; let bw=W*(+$('vw').value/100), bh=bw/r; const maxH=1250; if(bh>maxH){bh=maxH;bw=bh*r;}
+  const hs=+$('hs').value, hl=1.18, as=Math.round(hs*0.75);
+  g.font='600 '+hs+'px '+SANS; const lines=wrapLines($('hk').value,W-40);
+  const hh=lines.length*hs*hl, gap=hs*0.28, ah=$('hd').value?as*1.25:0;
+  const total=hh+(hh?gap:0)+bh+(ah?gap:0)+ah, top=(H-total)/2, vy=top+hh+(hh?gap:0);
+  return{full:false,x:(W-bw)/2,y:vy+(+$('vo').value||0),w:bw,h:bh,lines,hs,hl,top,as,ay:vy+bh+gap};
+}
+function frameText(F){
+  g.save();g.fillStyle='#fff';g.textAlign='center';g.textBaseline='middle';g.shadowColor='transparent';
+  g.font='600 '+F.hs+'px '+SANS; F.lines.forEach((l,i)=>g.fillText(l,W/2,F.top+(i+.5)*F.hs*F.hl));
+  if($('hd').value){g.font='500 '+F.as+'px '+SANS;g.fillText($('hd').value,W/2,F.ay+F.as*0.65);}
+  g.restore();
+}
+function cover(el,w,h,F){const s=Math.max(F.w/w,F.h/h);return[F.x+(F.w-w*s)*+$('cx').value,F.y+(F.h-h*s)*(0.5-(+$('cy').value)/2),w*s,h*s];}
+function curBroll(rel){return broll.find(b=>b.dur>0&&rel>=b.start&&rel<b.start+b.dur);}
+function draw(){
+  g.fillStyle='#000';g.fillRect(0,0,W,H);
+  const F=layout(); if(!F.full)frameText(F);
+  if(!vid.videoWidth&&!F.full){g.fillStyle='#161616';g.fillRect(F.x,F.y,F.w,F.h);}
+  if(vid.videoWidth){
+    const rel=otime(vid.currentTime); const b=curBroll(rel);
+    broll.forEach(x=>{if(x.type==='video'){if(x===b){if(x.el.paused&&playing)x.el.play().catch(()=>{});}else if(!x.el.paused)x.el.pause();}});
+    g.save();g.beginPath();g.rect(F.x,F.y,F.w,F.h);g.clip();
+    if(b){const w=b.type==='video'?b.el.videoWidth:b.el.naturalWidth,h=b.type==='video'?b.el.videoHeight:b.el.naturalHeight;
+      if(w){const k=Math.max(F.w/w,F.h/h);g.drawImage(b.el,F.x+(F.w-w*k)/2,F.y+(F.h-h*k)/2,w*k,h*k);} }
+    else{const r=cover(vid,vid.videoWidth,vid.videoHeight,F),z=zoomK(rel);if(z!==1){const mx=F.x+F.w/2,my=F.y+F.h/2;r[0]=mx+(r[0]-mx)*z;r[1]=my+(r[1]-my)*z;r[2]*=z;r[3]*=z;}g.drawImage(vid,...r);}
+    g.restore();
+    const ct=vid.currentTime-(+$('co').value), c=cues.find(c=>ct>=c.s&&ct<c.e);
+    if(c){
+      const sty=$('sty').value, age=Math.min(1,(ct-c.s)/0.1), sc=sty==='minimal'?1:1.15-0.15*age;
+      const size=+$('fs').value*(F.full?1:0.6), y=F.y+F.h*(+$('fy').value/100); const words=c.words.map(w=>$('up').checked?w.toUpperCase():w);
+      g.save();g.translate(W/2,y);g.scale(sc,sc);g.globalAlpha=0.4+0.6*age;
+      g.font=(sty==='minimal'?'400 ':'900 ')+size+'px '+$('fn').value;g.textBaseline='middle';g.lineJoin='round';
+      const gap=size*0.28, ws=words.map(w=>g.measureText(w).width), total=ws.reduce((a,b)=>a+b,0)+gap*(words.length-1);
+      let kw=0;words.forEach((w,i)=>{if(w.length>words[kw].length)kw=i;});
+      if(sty==='karaoke'){kw=0;c.wt.forEach((x,i)=>{if(ct>=x.s)kw=i;});}
+      if(sty==='box'){const pw=total+size*0.8,ph=size*1.5;g.fillStyle='rgba(0,0,0,.72)';g.beginPath();if(g.roundRect)g.roundRect(-pw/2,-ph/2,pw,ph,size*0.3);else g.rect(-pw/2,-ph/2,pw,ph);g.fill();}
+      let x=-total/2;
+      words.forEach((w,i)=>{
+        if(sty==='kinetic'||sty==='karaoke'||sty==='redkw'){g.shadowColor='rgba(0,0,0,.8)';g.shadowBlur=14;g.shadowOffsetY=4;g.lineWidth=size/9;g.strokeStyle='#000';g.strokeText(w,x,0);}
+        else if(sty==='minimal'){g.shadowColor='rgba(0,0,0,.6)';g.shadowBlur=6;g.shadowOffsetY=2;}
+        g.fillStyle=(i===kw&&sty!=='minimal')?$('hc').value:'#fff';
+        g.fillText(w,x,0);x+=ws[i]+gap;});
+      g.restore();
+    }
+  }
+  const rel=otime(vid.currentTime); $('ph').style.left=(100*rel/(clipLen()||1))+'%';
+}
+function advance(){const R=ranges(),t=vid.currentTime;
+  if(t>=R[R.length-1].b-0.02||vid.ended)return true;
+  for(let i=0;i<R.length-1;i++){if(t>=R[i].b-0.02&&t<R[i+1].a-0.05){vid.currentTime=R[i+1].a;break;}}
+  return false;}
+function loop(){draw(); if(playing){ if(advance()){stop();return;} const rel=otime(vid.currentTime);fireSfx(rel);duck(rel); raf=requestAnimationFrame(loop);} }
+function play(){if(!vid.duration)return;try{ensureAudio();}catch(e){}stopAudio();sfxT.forEach(x=>x.done=0);getEnv().catch(()=>{});vid.currentTime=ranges()[0].a;playing=true;vid.play();loop();$('play').textContent='■ Stop';}
+function stop(){playing=false;vid.pause();stopAudio();broll.forEach(b=>b.type==='video'&&b.el.pause());cancelAnimationFrame(raf);$('play').textContent='▶ Preview';
+  if(recorder&&recorder.state==='recording')recorder.stop();draw();}
+function renderTL(){
+  const L=clipLen()||1, pc=x=>(100*x/L)+'%';
+  $('t1').innerHTML=ranges().map((r,i)=>'<i style="left:'+pc(r.o)+';width:'+pc(r.b-r.a)+';background:#3a3a3a;box-shadow:inset -1px 0 0 '+(cutK?'#b8ff3d':'transparent')+'">'+(i===0?'Speaker · '+L.toFixed(1)+'s'+(cutK?' (silence cut)':''):'')+'</i>').join('');
+  $('t2').innerHTML=broll.filter(b=>b.dur>0).map((b,i)=>'<i data-i="'+broll.indexOf(b)+'" title="Click to remove" style="left:'+pc(b.start)+';width:'+pc(b.dur)+';background:'+cols[b.id%4]+';color:#111">'+b.name+'</i>').join('');
+  $('t3').innerHTML=cues.map(c=>({c,s:otime(c.s),e:otime(c.e)})).filter(x=>x.e>x.s).map(x=>'<i style="left:'+pc(x.s)+';width:'+pc(x.e-x.s)+';background:#555">'+x.c.words.join(' ')+'</i>').join('');
+  $('t4').innerHTML=sfxT.map((x,i)=>'<i data-x="'+i+'" title="Click to remove" style="left:'+pc(x.t)+';width:'+pc(Math.max(0.25,x.dur))+';background:#ff8f5e;color:#111">'+x.s.name.slice(0,14)+'</i>').join('');
+  const bp=bgmPick();$('t5').innerHTML=bp?'<i style="left:0;width:100%;background:#5ec8ff;color:#111">'+bp.name+'</i>':'';
+  document.querySelectorAll('#t4 i').forEach(el=>el.onclick=()=>{sfxT.splice(+el.dataset.x,1);renderTL();});
+  document.querySelectorAll('#t2 i').forEach(el=>el.onclick=()=>{broll[+el.dataset.i].dur=0;renderTL();report();draw();});
+  report();
+}
+function report(){
+  const L=clipLen(); let r='Source range: '+t0().toFixed(1)+'s → '+(cutK?cutK[cutK.length-1].b:t0()+L).toFixed(1)+'s ('+L.toFixed(1)+'s)\nCaptions: '+cues.length+' cues'+(approx?' (estimated timings)':'')+'\n';
+  if(cutK)r+='Silence cut: '+(cutK.length-1)+' jump cuts, '+((cutK[cutK.length-1].b-t0())-L).toFixed(1)+'s removed\n'; const used=broll.filter(b=>b.dur>0); r+='B-roll cutaways: '+used.length+'\n';
+  used.sort((a,b)=>a.start-b.start).forEach(b=>r+='  '+b.start.toFixed(1)+'–'+(b.start+b.dur).toFixed(1)+'s  '+b.name+'\n');
+  if(!segs.length)r+='Warning: no transcript loaded.\n'; if(approx)r+='Warning: transcript timings were estimated.\n';
+  if($('zm').value!=='none')r+='Zoom '+$('zm').value+' '+$('zs').value+'% over '+($('zw').checked?'the whole clip':$('zd').value+'s')+'\n';
+  const bp=bgmPick();if(bp)r+='Music: '+bp.name+' (ducks under speech)\n';sfxT.forEach(x=>r+='SFX: '+x.s.name+' hit at '+x.hit.toFixed(2)+'s\n');
+  $('rep').textContent=r;
+}
+function autoPlace(){
+  if(!segs.length||!broll.length){$('stat').textContent='Need a transcript and B-roll first.';return;}
+  broll.forEach(b=>b.dur=0); const a=t0(), L=clipLen(), pool=[...broll]; let k=0, last=-1;
+  const inClip=segs.filter(s=>otime(s.e)>otime(s.s)&&otime(s.s)<L);
+  inClip.forEach((s,i)=>{ if(i%2===0)return; const st=otime(s.s), d=Math.min(3,Math.max(1.5,s.e-s.s)); if(st+d>L)return;
+    let b=pool[k%pool.length]; if(pool.length>1&&b.id===last){k++;b=pool[k%pool.length];} k++; last=b.id;
+    const copy=b.dur>0?{...b}:b; copy.start=st; copy.dur=d; if(copy!==b)broll.push(copy); });
+  renderTL(); draw();
+}
+$('src').onchange=e=>{const f=e.target.files[0]; if(!f)return; cutK=null;envC=null;$('cut').checked=false;vid.src=URL.createObjectURL(f); vid.onloadedmetadata=()=>{$('ln').value=Math.min(30,Math.floor(vid.duration));wantLen=+$('ln').value;vid.currentTime=0;$('stat').textContent=f.name+' · '+vid.duration.toFixed(1)+'s · '+vid.videoWidth+'×'+vid.videoHeight;if($('tr').value)build();else renderTL();queueAuto();};};
+vid.onseeked=draw; vid.onloadeddata=draw;
+$('tr').oninput=build; $('wn').onchange=build;
+$('trf').onchange=async e=>{const f=e.target.files[0]; if(f){$('tr').value=await f.text();build();}};
+$('ln').addEventListener('change',()=>{wantLen=+$('ln').value||30;});
+['st','ln'].forEach(i=>$(i).onchange=async()=>{await recut();build();});
+['cut','sth','sgp'].forEach(i=>$(i).onchange=async()=>{await recut();build();});
+
+const PRE={kinetic:[true,'#ffe14d',0],karaoke:[true,'#b8ff3d',1],box:[false,'#ffe14d',1],minimal:[false,'#ffffff',2],redkw:[true,'#ff3b3b',0]};
+$('sty').onchange=()=>{const p=PRE[$('sty').value];$('up').checked=p[0];$('hc').value=p[1];$('fn').selectedIndex=p[2];draw();};
+['cx','cy','vo','fs','fy','up','hc','fn','rt','hk','hd','hs','vw','co','zm','zs','zd','zw'].forEach(i=>$(i).oninput=draw);
+$('vreset').onclick=()=>{$('vo').value=0;$('cy').value=0;$('cx').value=0.5;draw();};
+$('br').onchange=e=>{[...e.target.files].forEach(f=>{const u=URL.createObjectURL(f),isV=f.type.startsWith('video'),el=isV?document.createElement('video'):new Image();
+  if(isV){el.muted=true;el.loop=true;el.playsInline=true;el.src=u;el.load();}else el.src=u;
+  broll.push({id:broll.length,name:f.name.slice(0,18),type:isV?'video':'image',el,start:0,dur:0});}); $('stat').textContent=broll.length+' B-roll asset(s) loaded.';};
+$('auto').onclick=autoPlace; $('clr').onclick=()=>{broll=[];renderTL();draw();};
+$('play').onclick=()=>playing?stop():play();
+$('ruler').onclick=e=>{if(!vid.duration)return;const r=$('ruler').getBoundingClientRect();vid.currentTime=stime(clipLen()*(e.clientX-r.left)/r.width);};
+$('exp').onclick=()=>{
+  if(!vid.duration){return;} stop();
+  try{ensureAudio();}catch(err){}
+  const stream=cv.captureStream(30); if(adest)adest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
+  const mt=['video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m)); const chunks=[];
+  recorder=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:8e6}); recorder.ondataavailable=ev=>ev.data.size&&chunks.push(ev.data);
+  recorder.onstop=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(chunks,{type:'video/webm'}));a.download='dweis-edit.webm';a.click();$('stat').textContent='Exported dweis-edit.webm';};
+  recorder.start(); $('stat').textContent='Recording in real time… keep this tab open.'; play();
+};
+/* ---- zoom / music / hook SFX ---- */
+let bgmList=[],sfxList=[],sfxT=[],bgmNode=null,bgmG=null,bgmBase=0,live=[],lastV=-9;
+const AUD=/\.(mp3|wav|ogg|m4a|aac|flac|opus)$/i;
+function zoomK(rel){const m=$('zm').value;if(m==='none')return 1;const S=$('zs').value/100,D=$('zw').checked?clipLen():+$('zd').value;let p=Math.min(1,Math.max(0,rel/D));p=1-Math.pow(1-p,3);return m==='in'?1+S*p:1+S*(1-p);}
+function ensureAudio(){
+  if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();
+  if(!adest)adest=actx.createMediaStreamDestination();
+  if(!wired){const s=actx.createMediaElementSource(vid);s.connect(actx.destination);s.connect(adest);wired=true;}
+  actx.resume();
+}
+function outTo(n){n.connect(actx.destination);n.connect(adest);}
+function stopAudio(){try{bgmNode&&bgmNode.stop();}catch(e){}bgmNode=null;live.forEach(n=>{try{n.stop();}catch(e){}});live=[];}
+function bgmPick(){if(!bgmList.length)return null;const v=$('bsel').value;return bgmList.find(b=>b.name===v)||bgmList[0];}
+function startBgm(){const p=bgmPick();if(!p||bgmNode)return;ensureAudio();scoreBgm(p,clipLen());
+  const n=actx.createBufferSource();n.buffer=p.buf;n.loop=true;bgmG=actx.createGain();bgmG.gain.value=0;n.connect(bgmG);outTo(bgmG);n.start(0,p.off);bgmNode=n;}
+vid.addEventListener('playing',()=>{if(playing&&!bgmNode)startBgm();});
+function duck(rel){if(!bgmG||!bgmNode)return;const E=envC;let sp=false;
+  if(E){if(E.db[Math.round(vid.currentTime/E.step)]>E.thr)lastV=vid.currentTime;sp=vid.currentTime-lastV<0.4;}
+  const fade=Math.min(1,Math.max(0,(clipLen()-rel)/1.2));
+  bgmG.gain.setTargetAtTime(bgmBase*(+$('bv').value)*(sp?0.45:1)*fade,actx.currentTime,0.12);}
+function fireSfx(rel){sfxT.forEach(x=>{if(!x.done&&rel>=x.t-0.03&&rel<x.t+x.dur){x.done=1;const n=actx.createBufferSource();n.buffer=x.s.buf;const g2=actx.createGain();g2.gain.value=x.v;n.connect(g2);outTo(g2);n.start(0,x.off,x.dur);live.push(n);}});}
+function scoreBgm(p,L){const e=p.e,w=Math.max(1,Math.min(e.length,Math.floor(L/p.hop)));let best=-9,bi=0,bm=0.05;
+  for(let i=0;i+w<=e.length;i+=20){let s=0,q=0,z=0;for(let j=i;j<i+w;j++)s+=e[j];const m=s/w;
+    for(let j=i;j<i+w;j++){const d=e[j]-m;q+=d*d;if(e[j]<m*0.15)z++;}
+    const cv=Math.sqrt(q/w)/(m+1e-6),sc=(1-Math.min(1,cv))+0.5*Math.min(1,m/0.12)-2*z/w;if(sc>best){best=sc;bi=i;bm=m;}}
+  p.sc=best+(p.dur>=L?0.3:0);p.off=bi*p.hop;bgmBase=p.n=0.25/Math.max(bm,0.01);}
+async function analyse(f,kind){
+  ensureAudio();const buf=await actx.decodeAudioData(await f.arrayBuffer()),d=buf.getChannelData(0),hop=Math.floor(buf.sampleRate*0.05),n=Math.floor(d.length/hop),e=new Float32Array(n);
+  for(let i=0;i<n;i++){let s=0;for(let j=i*hop;j<(i+1)*hop;j+=4)s+=d[j]*d[j];e[i]=Math.sqrt(s/(hop/4));}
+  const p={name:f.name,buf,dur:buf.duration,e,hop:hop/buf.sampleRate};
+  if(kind==='b'){scoreBgm(p,clipLen());}
+  else{let mx=0,mi=0,sm=0;e.forEach((v,i)=>{sm+=v;if(v>mx){mx=v;mi=i;}});p.pk=mi*p.hop;
+    p.hs=(/hook|hit|impact|boom|bass|drop|slam|punch|cinematic|riser|stinger/i.test(f.name)?2:0)+Math.min(3,mx/(sm/n+1e-6))/3+(p.dur>=0.4&&p.dur<=4?1:0);
+    p.ts=(/whoosh|woosh|swoosh|swish|transition|swipe|pop/i.test(f.name)?2:0)+(p.dur<1.6?1:0);}
+  return p;}
+async function loadLib(files){
+  const A=[...files].filter(f=>AUD.test(f.name)),inF=(f,k)=>(f.webkitRelativePath||'').toLowerCase().split('/').slice(0,-1).includes(k),
+    B=A.filter(f=>inF(f,'bgm')),S=A.filter(f=>inF(f,'best hook')),n=$('libn');
+  if(!B.length&&!S.length){n.textContent='No audio found. Pick the folder that contains "bgm" and "best hook" (or either folder itself).';return;}
+  bgmList=[];sfxList=[];
+  for(let i=0;i<B.length;i++){n.textContent='Analysing music '+(i+1)+'/'+B.length+'…';try{bgmList.push(await analyse(B[i],'b'));}catch(e){console.warn(B[i].name,e);}}
+  for(let i=0;i<S.length;i++){n.textContent='Analysing SFX '+(i+1)+'/'+S.length+'…';try{sfxList.push(await analyse(S[i],'s'));}catch(e){console.warn(S[i].name,e);}}
+  bgmList.sort((a,b)=>b.sc-a.sc);
+  $('bsel').innerHTML='<option value="auto">Auto · best track</option>'+bgmList.map(b=>'<option>'+b.name+'</option>').join('');
+  n.textContent=bgmList.length+' music track(s), '+sfxList.length+' hook SFX loaded. Best music: '+(bgmList[0]?bgmList[0].name:'none')+'. Music is scored for steady energy, no dead air and enough length, then ducked under speech.';
+  if(sfxList.length)await placeSfx();renderTL();}
+function addSfx(s,hit,v){const off=Math.max(0,s.pk-hit);sfxT.push({s,t:Math.max(0,hit-s.pk),off,hit,v,dur:Math.min(s.dur-off,4),done:0});}
+async function placeSfx(){
+  if(!sfxList.length){$('stat').textContent='Select the project folder first.';return;}
+  try{await getEnv();}catch(e){}
+  sfxT=[];let hit=0;const E=envC;
+  if(!cutK&&E){let t=t0();const end=Math.min(t0()+10,E.db.length*E.step);while(t<end&&E.db[Math.round(t/E.step)]<=E.thr)t+=E.step;hit=Math.max(0,t-t0()-0.05);}
+  else if(cues.length)hit=Math.max(0,otime(cues[0].s)-0.05);
+  const H=[...sfxList].sort((a,b)=>b.hs-a.hs)[0];addSfx(H,hit,1);
+  if($('sfxcut').checked){const T=sfxList.filter(x=>x!==H).sort((a,b)=>b.ts-a.ts);
+    if(T.length)broll.filter(b=>b.dur>0).sort((a,b)=>a.start-b.start).forEach((b,i)=>addSfx(T[i%T.length],b.start,0.6));}
+  renderTL();$('stat').textContent='Hook SFX "'+H.name+'" lands on the first spoken word at '+hit.toFixed(2)+'s.';}
+/* ---- Auto library: start_editor.py re-scans the folders on every request, the editor scores + applies ---- */
+const autoOn={bgm:false,sfx:false},anCache=new Map();let libBusy=null,qT=0;
+const libNote=t=>{$('libn').textContent=t;};
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function srvDown(e){
+  libNote(location.protocol==='file:'
+    ?'Opened as a plain file, so the folders cannot be scanned. Run start_editor.py once (it opens this page for you), or pick the folder manually below.'
+    :(e&&/404/.test(e.message)
+      ?'This page is not being served by the NEW start_editor.py (an old copy or Live Server is answering). Close every old start_editor window, save the new start_editor.py over the old one, run it again and use the tab it opens. Or pick the folder manually below.'
+      :'Cannot reach the editor server ('+((e&&e.message)||e)+'). Is the start_editor.py window still open? You can also pick the folder manually below.'));
+  $('lib').style.display='block';}
+async function fetchLib(){
+  const r=await fetch('api/library',{cache:'no-store'});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const j=await r.json();if(!j||!Array.isArray(j.bgm)||!Array.isArray(j.sfx))throw new Error('unexpected reply');
+  return j;}
+function fillBsel(names){const cur=$('bsel').value;
+  $('bsel').innerHTML='<option value="auto">Auto · best track</option>'+names.map(n=>'<option>'+esc(n)+'</option>').join('');
+  $('bsel').value=names.includes(cur)?cur:'auto';}
+function loadFromServer(){
+  if(libBusy)return libBusy;
+  libBusy=(async()=>{
+    const L=await fetchLib(),K=(it,k)=>k+'|'+it.url+'|'+it.mtime+'|'+it.size,keep=new Set();
+    const get=async(it,kind,i,n)=>{const key=K(it,kind);keep.add(key);
+      if(!anCache.has(key)){
+        libNote('Analysing '+(kind==='b'?'music ':'SFX ')+(i+1)+'/'+n+'…');
+        const r=await fetch(it.url);if(!r.ok)throw new Error(it.name+': HTTP '+r.status);
+        anCache.set(key,await analyse(new File([await r.blob()],it.name),kind));}
+      return anCache.get(key);};
+    const nb=[],ns=[];
+    for(let i=0;i<L.bgm.length;i++){try{nb.push(await get(L.bgm[i],'b',i,L.bgm.length));}catch(e){console.warn(e);}}
+    for(let i=0;i<L.sfx.length;i++){try{ns.push(await get(L.sfx[i],'s',i,L.sfx.length));}catch(e){console.warn(e);}}
+    [...anCache.keys()].forEach(k=>{if(!keep.has(k))anCache.delete(k);});
+    const len=clipLen();nb.forEach(p=>scoreBgm(p,len));nb.sort((a,b)=>b.sc-a.sc);
+    bgmList=nb;sfxList=ns;fillBsel(nb.map(b=>b.name));$('lib').style.display='none';
+    libNote(nb.length+' music track(s), '+ns.length+' hook SFX ready'+(nb[0]?'. Best music: '+nb[0].name:'')+'. Folders are re-scanned each time you use Auto BGM / Auto Hook SFX.');
+    return L;
+  })().finally(()=>{libBusy=null;});
+  return libBusy;}
+async function autoBgm(){
+  autoOn.bgm=true;$('bsel').value='auto';
+  try{await loadFromServer();}catch(e){if(!bgmList.length){autoOn.bgm=false;srvDown(e);return;}}
+  if(!bgmList.length){autoOn.bgm=false;libNote('No audio files found in the "bgm" folder.');return;}
+  const L=clipLen();bgmList.forEach(p=>scoreBgm(p,L));bgmList.sort((a,b)=>b.sc-a.sc);
+  renderTL();$('stat').textContent='Auto BGM: "'+bgmList[0].name+'" (starting '+bgmList[0].off.toFixed(1)+'s into the track, ducked under speech).';}
+async function autoHook(){
+  autoOn.sfx=true;
+  try{await loadFromServer();}catch(e){if(!sfxList.length){autoOn.sfx=false;srvDown(e);return;}}
+  if(!sfxList.length){autoOn.sfx=false;libNote('No audio files found in the "best hook" folder.');return;}
+  await placeSfx();}
+/* when start time, length, silence-cut or transcript change, redo whatever the user switched to Auto */
+function queueAuto(){if(!autoOn.bgm&&!autoOn.sfx)return;clearTimeout(qT);
+  qT=setTimeout(async()=>{if(autoOn.bgm)await autoBgm();if(autoOn.sfx)await placeSfx();},200);}
+$('lib').onclick=()=>$('libf').click();
+$('libf').onchange=e=>loadLib(e.target.files);
+$('bgmbtn').onclick=autoBgm;
+$('sfxbtn').onclick=autoHook;
+$('sfxcut').onchange=()=>{if(autoOn.sfx)placeSfx();};
+$('bsel').onchange=async()=>{
+  const v=$('bsel').value;if(v==='auto'){await autoBgm();return;}
+  autoOn.bgm=false;
+  if(!bgmList.some(b=>b.name===v)){try{await loadFromServer();}catch(e){srvDown(e);}}
+  $('bsel').value=v;renderTL();};
+(async()=>{try{const L=await fetchLib();fillBsel(L.bgm.map(x=>x.name));
+  libNote('Server connected: found '+L.bgm.length+' music track(s) and '+L.sfx.length+' hook SFX. Press Auto BGM or Auto Hook SFX and the editor scans, scores and applies them for you.');}
+  catch(e){srvDown(e);}})();
+$('auto').addEventListener('click',()=>{if(sfxList.length&&$('sfxcut').checked)setTimeout(placeSfx,0);});
+renderTL(); draw();
+</script>
+<script type="module">
+import {pipeline} from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
+let asr=null;
+async function asrRun(pcm){const o={chunk_length_s:30,stride_length_s:5};try{return await asr(pcm,{...o,return_timestamps:'word'});}catch(e){console.warn('word timestamps unavailable',e);return await asr(pcm,{...o,return_timestamps:true});}}
+function wseg(out,off){
+  const W=(out.chunks||[]).filter(c=>c.text.trim()).map(c=>({t:c.text.trim(),s:off+c.timestamp[0],e:off+(c.timestamp[1]==null?c.timestamp[0]+0.4:c.timestamp[1])}));
+  if(W.some(w=>/\s/.test(w.t))){asrW=[];return W.map(w=>({s:w.s,e:w.e,text:w.t}));}
+  asrW=W.map(w=>({s:w.s,e:w.e}));const S=[];let cur=null;
+  W.forEach(w=>{if(!cur||cur.n>=9||w.s-cur.e>0.6||/[.!?]$/.test(cur.last)){cur={s:w.s,e:w.e,text:'',n:0,last:''};S.push(cur);}cur.text+=(cur.text?' ':'')+w.t;cur.e=w.e;cur.n++;cur.last=w.t;});
+  return S;}
+const note=t=>document.getElementById('asrn').textContent=t;
+const pad=(n,l=2)=>String(n).padStart(l,'0');
+const fmt=x=>{const ms=Math.round(x*1000);return pad(Math.floor(ms/3600000))+':'+pad(Math.floor(ms/60000)%60)+':'+pad(Math.floor(ms/1000)%60)+','+pad(ms%1000,3);};
+document.getElementById('asr').onclick=async()=>{
+  const f=document.getElementById('src').files[0];
+  if(!f){note('Load a source video first.');return;}
+  const btn=document.getElementById('asr'); btn.disabled=true;
+  try{
+    note('Reading audio from video...');
+    const ac=new (window.AudioContext||window.webkitAudioContext)();
+    const dec=await ac.decodeAudioData(await f.arrayBuffer()); ac.close();
+    const a=t0(), L=srcLen(), r=dec.sampleRate;
+    const from=Math.floor(a*r), to=Math.min(dec.length,Math.floor((a+L)*r)), len=to-from;
+    if(len<=0){note('Start time is past the end of the video.');return;}
+    const mono=new Float32Array(len);
+    for(let c=0;c<dec.numberOfChannels;c++){const d=dec.getChannelData(c);for(let i=0;i<len;i++)mono[i]+=d[from+i]/dec.numberOfChannels;}
+    const off=new OfflineAudioContext(1,Math.ceil(len*16000/r),16000);
+    const ab=off.createBuffer(1,len,r); ab.copyToChannel(mono,0);
+    const src=off.createBufferSource(); src.buffer=ab; src.connect(off.destination); src.start();
+    const pcm=(await off.startRendering()).getChannelData(0);
+    if(!asr){
+      note('Loading model...');
+      asr=await pipeline('automatic-speech-recognition','Xenova/whisper-tiny.en',{progress_callback:p=>{if(p.status==='progress')note('Downloading model '+Math.round(p.progress)+'%');}});
+    }
+    note('Transcribing '+L.toFixed(0)+'s of audio... this can take a minute.');
+    const out=await asrRun(pcm);
+    const chunks=wseg(out,a);
+    if(!chunks.length){note('No speech found in that range.');return;}
+    document.getElementById('tr').value=chunks.map((c,i)=>(i+1)+'\n'+fmt(c.s)+' --> '+fmt(c.e)+'\n'+c.text).join('\n\n');
+    try{await getEnv();}catch(e){}
+    build();
+    note('Done: '+chunks.length+' segments. Edit the text box to fix any wrong words.');
+  }catch(e){console.error(e);note('Failed: '+(e.message||e)+'. Run from a local server (see steps), not a double-clicked file.');}
+  finally{btn.disabled=false;}
+};
+
+/* ---- Smart start: skip intro/filler, jump to the engaging line ---- */
+const hn=t=>document.getElementById('hkn').textContent=t;
+const FILLER=/\b(hey|hi|hello|what'?s up|welcome|guys|in this video|today|subscribe|like and|before we|let'?s get|let'?s jump|sponsor|check out|my name|testing|mic|one two|okay so|alright|so yeah|um+|uh+)\b/i;
+const HOOKY=/\b(stop|never|mistake|secret|truth|why|how|don'?t|dont|nobody|most people|biggest|worst|best|wrong|actually|could be|sabotag\w*|ruin\w*|lying|myth|warning|danger\w*|lose|losing|gain|fast|only|must|need to|every|problem|here'?s)\b/i;
+function hookScore(t,i){
+  let sc=0; const n=t.split(/\s+/).length;
+  if(/\?/.test(t))sc+=3; if(HOOKY.test(t))sc+=3; if(/\byou(r|'re)?\b/i.test(t))sc+=2; if(/\d/.test(t))sc+=1;
+  if(FILLER.test(t))sc-=5; if(n<4)sc-=2; if(n>=6&&n<=25)sc+=1;
+  return sc-i*0.05;
+}
+async function pcmOf(f,a,L){
+  const ac=new (window.AudioContext||window.webkitAudioContext)();
+  const dec=await ac.decodeAudioData(await f.arrayBuffer()); ac.close();
+  const r=dec.sampleRate, from=Math.floor(a*r), to=Math.min(dec.length,Math.floor((a+L)*r)), len=to-from;
+  if(len<=0)return null;
+  const mono=new Float32Array(len);
+  for(let c=0;c<dec.numberOfChannels;c++){const d=dec.getChannelData(c);for(let i=0;i<len;i++)mono[i]+=d[from+i]/dec.numberOfChannels;}
+  const off=new OfflineAudioContext(1,Math.ceil(len*16000/r),16000);
+  const ab=off.createBuffer(1,len,r); ab.copyToChannel(mono,0);
+  const bs=off.createBufferSource(); bs.buffer=ab; bs.connect(off.destination); bs.start();
+  return (await off.startRendering()).getChannelData(0);
+}
+function applyStart(c){
+  const want=wantLen||+document.getElementById('ln').value||30, dur=vid.duration||0;
+  let st=Math.max(0,c.s-0.2), shifted=false;
+  if(dur&&st+want>dur){st=Math.max(0,dur-want);shifted=true;}
+  document.getElementById('st').value=st.toFixed(1);
+  const len=dur?Math.max(1,Math.min(want,Math.floor((dur-st)*10)/10)):want;
+  document.getElementById('ln').value=len;
+  vid.currentTime=st; recut().then(build);
+  hn('Clip: '+st.toFixed(1)+'s → '+(st+len).toFixed(1)+'s ('+len+'s)'+(shifted?' · not enough video after that line, so the start was moved earlier to keep your length':'')+'. "'+c.text.slice(0,60)+'"');
+}
+function showHooks(sg,ranked){
+  const box=document.getElementById('hooks'); box.innerHTML='';
+  const top=new Set(ranked.map(r=>r.s)), order=[...ranked,...sg.filter(x=>!top.has(x.s))].slice(0,60);
+  order.forEach((c,i)=>{
+    const b=document.createElement('button'); b.type='button';
+    const t=document.createElement('b'); t.textContent=c.s.toFixed(1)+'s';
+    const x=document.createElement('span'); x.textContent=c.text.length>70?c.text.slice(0,70)+'…':c.text;
+    b.append(t,x);
+    if(i<ranked.length){const m=document.createElement('em'); m.textContent=i?'#'+(i+1):'Best'; b.append(m);}
+    b.onclick=()=>{box.querySelectorAll('button').forEach(k=>k.classList.remove('on'));b.classList.add('on');applyStart(c);};
+    if(!i)b.classList.add('on');
+    box.appendChild(b);
+  });
+}
+document.getElementById('hook').onclick=async()=>{
+  const f=document.getElementById('src').files[0];
+  if(!f){hn('Load a source video first.');return;}
+  const btn=document.getElementById('hook'); btn.disabled=true;
+  try{
+    hn('Reading audio from video...');
+    const pcm=await pcmOf(f,0,180);
+    if(!pcm){hn('Could not read audio.');return;}
+    if(!asr){
+      hn('Loading model...');
+      asr=await pipeline('automatic-speech-recognition','Xenova/whisper-tiny.en',{progress_callback:p=>{if(p.status==='progress')hn('Downloading model '+Math.round(p.progress)+'%');}});
+    }
+    hn('Listening for the engaging part... this can take a minute.');
+    const out=await asrRun(pcm);
+    const L=pcm.length/16000;
+    const sg=wseg(out,0);
+    if(!sg.length){hn('No speech found in the first 3 minutes.');return;}
+    document.getElementById('tr').value=sg.map((c,i)=>(i+1)+'\n'+fmt(c.s)+' --> '+fmt(c.e)+'\n'+c.text).join('\n\n');
+    const want=wantLen||+document.getElementById('ln').value||30, dur=vid.duration||L;
+    const fit=sg.filter(x=>x.s+want<=dur+0.5), pool=fit.length?fit:sg;
+    const ranked=pool.map(x=>({...x,sc:hookScore(x.text,sg.indexOf(x))})).sort((p,q)=>q.sc-p.sc||p.s-q.s).slice(0,3);
+    showHooks(sg,ranked); applyStart(ranked[0]);
+  }catch(e){console.error(e);hn('Failed: '+(e.message||e)+'. Run from a local server, not a double-clicked file.');}
+  finally{btn.disabled=false;}
+};
+</script>
+</body>
+</html>
