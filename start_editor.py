@@ -81,7 +81,7 @@ if srv is None:
 lib = library()
 with open('library.json', 'w', encoding='utf-8') as fp:
     json.dump(lib, fp)  # kept for compatibility; the editor now uses /api/library
-url = 'http://localhost:%d%s' % (port, PAGE_URL)
+url = 'http://127.0.0.1:%d%s' % (port, PAGE_URL)
 print('Found %d music tracks and %d hook SFX.\nEditor: %s\nKeep this window open while editing.'
       % (len(lib['bgm']), len(lib['sfx']), url))
 threading.Timer(0.8, lambda: webbrowser.open(url)).start()
