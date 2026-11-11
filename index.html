@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Jare Enterprise</title>
+<title>JARE CLIPPER</title>
 <style>
 :root{--bg:#0e0f11;--panel:#16171a;--raise:#1f2125;--line:#2a2d33;--tx:#ececee;--mut:#8d929b;--acc:#b8ff3d;--r:10px;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 *{box-sizing:border-box}
@@ -62,7 +62,7 @@ canvas{width:min(100%,420px,calc((100dvh - 215px)*9/16));aspect-ratio:9/16;backg
 </style>
 </head>
 <body>
-<header><b>Jare <span>Enterprise</span></b><small>Upload, transcribe, caption, add B-roll, export</small></header>
+<header><b>JARE <span>CLIPPER</span></b><small>Upload, transcribe, caption, add B-roll, export</small></header>
 <main>
 <section>
  <div class="card"><h3>1 · Source video</h3>
@@ -151,7 +151,69 @@ canvas{width:min(100%,420px,calc((100dvh - 215px)*9/16));aspect-ratio:9/16;backg
 </main>
 <script>
 const $=id=>document.getElementById(id), cv=$('cv'), g=cv.getContext('2d'), W=1080, H=1920;
+
 const vid=document.createElement('video'); vid.playsInline=true; vid.crossOrigin='anonymous';
+
+/* MOV/MP4 audio extraction:
+   decodeAudioData() only accepts audio files, not complete video containers.
+   Let the browser's native video decoder play the selected file and capture
+   its audio through Web Audio. This supports browser-playable MOV/MP4 files. */
+async function decodeSourceAudio(file, startAt=0, lengthSec=Infinity){
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC) throw new Error('Web Audio is not supported in this browser.');
+  const ctx=new AC(), el=document.createElement('video');
+  const url=URL.createObjectURL(file);
+  el.preload='auto'; el.playsInline=true; el.src=url;
+  el.style.cssText='position:fixed;width:2px;height:2px;left:-10px;top:-10px;opacity:.01;pointer-events:none';
+  document.body.appendChild(el);
+  let source, processor, mute, chunks=[], done=false;
+  const cleanup=()=>{try{el.pause();}catch(e){} try{source&&source.disconnect();processor&&processor.disconnect();mute&&mute.disconnect();}catch(e){} try{ctx.close();}catch(e){} el.remove();URL.revokeObjectURL(url);};
+  try{
+    await new Promise((resolve,reject)=>{
+      el.onloadedmetadata=resolve;el.onerror=()=>reject(new Error('This browser cannot play this video format. Try MP4 (H.264).'));
+      el.load();
+    });
+    const total=Number.isFinite(lengthSec)?Math.min(lengthSec,Math.max(0,el.duration-startAt)):Math.max(0,el.duration-startAt);
+    if(!Number.isFinite(total)||total<=0)throw new Error('No audio range found in this video.');
+    source=ctx.createMediaElementSource(el);
+    processor=ctx.createScriptProcessor(4096,2,1);
+    mute=ctx.createGain();mute.gain.value=0;
+    source.connect(processor);processor.connect(mute);mute.connect(ctx.destination);
+    const finish=()=>{if(done)return;done=true;};
+    processor.onaudioprocess=e=>{
+      if(done)return;
+      const left=e.inputBuffer.getChannelData(0);
+      const right=e.inputBuffer.numberOfChannels>1?e.inputBuffer.getChannelData(1):left;
+      const mono=new Float32Array(left.length);
+      for(let i=0;i<left.length;i++)mono[i]=(left[i]+right[i])*0.5;
+      chunks.push(mono);
+      if(el.currentTime>=startAt+total-0.03)finish();
+    };
+    await new Promise((resolve,reject)=>{
+      const onSeek=async()=>{
+        try{await ctx.resume();await el.play();resolve();}catch(err){reject(new Error('Tap the action again to allow video audio playback: '+err.message));}
+      };
+      if(Math.abs(el.currentTime-startAt)<0.02)onSeek();
+      else{el.onseeked=onSeek;el.currentTime=startAt;}
+    });
+    await new Promise((resolve,reject)=>{
+      const poll=()=>{
+        if(done||el.ended||el.currentTime>=startAt+total-0.02){finish();el.pause();resolve();return;}
+        if(el.error){reject(new Error('Video audio could not be read. Try MP4 (H.264/AAC).'));return;}
+        requestAnimationFrame(poll);
+      };
+      poll();
+    });
+    const count=chunks.reduce((n,c)=>n+c.length,0), joined=new Float32Array(count);
+    let offset=0;for(const c of chunks){joined.set(c,offset);offset+=c.length;}
+    if(!joined.length)throw new Error('No audio track was detected in this video.');
+    // Resample to 16 kHz for silence analysis and speech recognition.
+    const rate=ctx.sampleRate, outLen=Math.max(1,Math.floor(joined.length*16000/rate)), out=new Float32Array(outLen);
+    for(let i=0;i<outLen;i++){const p=i*rate/16000,j=Math.floor(p),f=p-j;out[i]=(joined[j]||0)*(1-f)+(joined[Math.min(j+1,joined.length-1)]||0)*f;}
+    return {data:out,sampleRate:16000,duration:out.length/16000,length:out.length,numberOfChannels:1,getChannelData:()=>out};
+  } finally {cleanup();}
+}
+
 let wantLen=0, cutK=null, envC=null, cues=[], segs=[], broll=[], approx=false, playing=false, raf=0, recorder=null, actx=null, adest=null, wired=false;
 const cols=['#b8ff3d','#5ec8ff','#ff8f5e','#d68bff'];
 const clipLen=()=>{if(cutK){const l=cutK[cutK.length-1];return l.o+l.b-l.a;}return Math.max(1,Math.min(+$('ln').value||30,(vid.duration||0)-(+$('st').value||0)));};
@@ -176,8 +238,7 @@ function makeRanges(db,step,st,want,sens,minGap,durEnd){
 }
 async function getEnv(){
   const f=$('src').files[0];if(!f)return null;if(envC&&envC.f===f)return envC;
-  const ac=new (window.AudioContext||window.webkitAudioContext)();
-  const dec=await ac.decodeAudioData(await f.arrayBuffer());ac.close();
+  const dec=await decodeSourceAudio(f);
   const hop=Math.round(dec.sampleRate*0.02),n=Math.floor(dec.length/hop),db=new Float32Array(n),chs=[];
   for(let c=0;c<dec.numberOfChannels;c++)chs.push(dec.getChannelData(c));
   for(let i=0;i<n;i++){let sum=0;for(const d of chs){for(let j=i*hop;j<(i+1)*hop;j++){const v=d[j];sum+=v*v;}}db[i]=20*Math.log10(Math.sqrt(sum/(hop*chs.length))+1e-6);}
@@ -345,7 +406,7 @@ $('exp').onclick=()=>{
   const stream=cv.captureStream(30); if(adest)adest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
   const mt=['video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m)); const chunks=[];
   recorder=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:8e6}); recorder.ondataavailable=ev=>ev.data.size&&chunks.push(ev.data);
-  recorder.onstop=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(chunks,{type:'video/webm'}));a.download='dweis-edit.webm';a.click();$('stat').textContent='Exported dweis-edit.webm';};
+  recorder.onstop=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(chunks,{type:'video/webm'}));a.download='jare-clipper.webm';a.click();$('stat').textContent='Exported jare-clipper.webm';};
   recorder.start(); $('stat').textContent='Recording in real time… keep this tab open.'; play();
 };
 /* ---- zoom / music / hook SFX ---- */
@@ -417,7 +478,7 @@ function srvDown(e){
       :'Cannot reach the editor server ('+((e&&e.message)||e)+'). Is the start_editor.py window still open? You can also pick the folder manually below.'));
   $('lib').style.display='block';}
 async function fetchLib(){
-  const r=await fetch('/library.json',{cache:'no-store'});
+  const r=await fetch('api/library',{cache:'no-store'});
   if(!r.ok)throw new Error('HTTP '+r.status);
   const j=await r.json();if(!j||!Array.isArray(j.bgm)||!Array.isArray(j.sfx))throw new Error('unexpected reply');
   return j;}
@@ -516,7 +577,7 @@ document.getElementById('asr').onclick=async()=>{
     try{await getEnv();}catch(e){}
     build();
     note('Done: '+chunks.length+' segments. Edit the text box to fix any wrong words.');
-  }catch(e){console.error(e);note('Failed: '+(e.message||e)+'. Run from a local server (see steps), not a double-clicked file.');}
+  }catch(e){console.error(e);note('Failed: '+(e.message||e)+'. If this MOV is not playable in your browser, convert it to MP4 (H.264 video + AAC audio) and try again.');}
   finally{btn.disabled=false;}
 };
 
@@ -531,16 +592,8 @@ function hookScore(t,i){
   return sc-i*0.05;
 }
 async function pcmOf(f,a,L){
-  const ac=new (window.AudioContext||window.webkitAudioContext)();
-  const dec=await ac.decodeAudioData(await f.arrayBuffer()); ac.close();
-  const r=dec.sampleRate, from=Math.floor(a*r), to=Math.min(dec.length,Math.floor((a+L)*r)), len=to-from;
-  if(len<=0)return null;
-  const mono=new Float32Array(len);
-  for(let c=0;c<dec.numberOfChannels;c++){const d=dec.getChannelData(c);for(let i=0;i<len;i++)mono[i]+=d[from+i]/dec.numberOfChannels;}
-  const off=new OfflineAudioContext(1,Math.ceil(len*16000/r),16000);
-  const ab=off.createBuffer(1,len,r); ab.copyToChannel(mono,0);
-  const bs=off.createBufferSource(); bs.buffer=ab; bs.connect(off.destination); bs.start();
-  return (await off.startRendering()).getChannelData(0);
+  const dec=await decodeSourceAudio(f,a,L);
+  return dec.data;
 }
 function applyStart(c){
   const want=wantLen||+document.getElementById('ln').value||30, dur=vid.duration||0;
