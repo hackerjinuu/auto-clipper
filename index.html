@@ -69,12 +69,12 @@ button.p.busy::after{border-color:#0004;border-top-color:#000}
 .task .tr{display:flex;align-items:center;gap:10px;font-size:13px}.task .tt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .task .sp{width:16px;height:16px;border:2px solid #fff3;border-top-color:var(--acc);border-radius:50%;animation:sp .7s linear infinite;flex:none}
 .task.ok .sp,.task.err .sp{display:none}.task.ok{border-color:var(--acc)}.task.ok .tt{color:var(--acc);font-weight:700}.task.err{border-color:#ff5e5e}.task.err .tt{color:#ff8f8f}
-.tb,.bar{height:4px;background:#ffffff14;border-radius:4px;margin-top:8px;overflow:hidden}.tb i,.bar i{display:block;height:100%;width:0;background:var(--acc);border-radius:4px;transition:width .25s}
+.tb,.pb{height:4px;background:#ffffff14;border-radius:4px;margin-top:8px;overflow:hidden}.tb i,.pb i{display:block;height:100%;width:0;background:var(--acc);border-radius:4px;transition:width .25s}
 .task.ind .tb i{width:40%!important;animation:ind 1.1s ease-in-out infinite}.task.ok .tb i{width:100%!important}
 .xm{position:fixed;inset:0;z-index:60;background:#000c;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px)}.xm[hidden]{display:none}
 .xb{width:min(94vw,440px);max-height:92vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}.xb h2{margin:0 0 6px;font-size:18px}.xb [hidden]{display:none!important}
 .xopts{display:grid;grid-template-columns:1fr 1fr;gap:8px}.xopts button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left}.xopts button span{font-weight:400;font-size:12px;color:var(--mut)}
-.xopts button.on{border-color:var(--acc);background:#b8ff3d1a}.xb .bar{height:10px;margin:14px 0 6px}.bar i.ok{background:#5ef08a}
+.xopts button.on{border-color:var(--acc);background:#b8ff3d1a}.xb .pb{height:10px;margin:14px 0 6px}.pb i.ok{background:#5ef08a}
 a.bl{display:inline-block;text-decoration:none;padding:8px 16px;border-radius:7px;background:var(--acc);color:#10120a;font-weight:700}
 </style>
 </head>
@@ -173,9 +173,9 @@ a.bl{display:inline-block;text-decoration:none;padding:8px 16px;border-radius:7p
   <label>Resolution</label><div class="xopts" id="xres"><button type="button" data-v="1080" class="on"><b>Full HD · 1080p</b><span>1080 × 1920</span></button><button type="button" data-v="2160"><b>Ultra HD · 4K</b><span>2160 × 3840</span></button></div>
   <label>Frame rate</label><div class="xopts" id="xfps"><button type="button" data-v="30" class="on"><b>30 fps</b><span>Fast, smooth</span></button><button type="button" data-v="60"><b>60 fps</b><span>Extra smooth</span></button></div>
   <div class="note" id="xsum" style="margin-top:10px"></div>
-  <div class="row" style="margin-top:12px"><button id="xgo" class="p" type="button">Start export</button><button id="xcl" type="button">Close</button></div></div>
- <div id="xs2" hidden><h2 id="xt">Exporting…</h2><div class="bar"><i id="xbar"></i></div><div class="note" id="xph"></div>
-  <div class="row" style="margin-top:12px"><button id="xcn" type="button">Cancel</button><a id="xdl" class="bl" hidden>Download</a><button id="xdone" type="button" hidden>Close</button></div></div>
+  <div class="row" style="margin-top:12px"><button id="xpr" type="button">▶ Preview</button><button id="xgo" class="p" type="button">⬇ Export &amp; download</button><button id="xcl" type="button">Close</button></div></div>
+ <div id="xs2" hidden><h2 id="xt">Exporting…</h2><div class="pb"><i id="xbar"></i></div><div class="note" id="xph"></div><video id="xpv" controls playsinline hidden style="width:100%;max-height:48vh;border-radius:8px;background:#000;margin-top:8px"></video>
+  <div class="row" style="margin-top:12px"><button id="xcn" type="button">Cancel</button><a id="xdl" class="bl" hidden>⬇ Download</a><button id="xsv" class="p" type="button" hidden>Save to device</button><button id="xdone" type="button" hidden>Close</button></div></div>
 </div></div>
 <script>
 const $=id=>document.getElementById(id), cv=$('cv'), g=cv.getContext('2d'), W=1080, H=1920; let S=1;
@@ -445,6 +445,7 @@ const xv=v=>{$('xm').hidden=v==='off';$('xs1').hidden=v!=='opt';$('xs2').hidden=
 function expSet(p,t){if(p!=null){const q=Math.max(0,Math.min(100,p));$('xbar').style.width=q.toFixed(1)+'%';}if(t)$('xph').textContent=t;}
 function expFinish(url,name){EXP.busy=false;if(EXP.url&&EXP.url!==url)URL.revokeObjectURL(EXP.url);EXP.url=url;
   $('xt').textContent='✓ Done · export complete';$('xbar').classList.add('ok');expSet(100);const d=$('xdl');d.href=url;d.download=name;d.hidden=false;$('xcn').hidden=true;$('xdone').hidden=false;
+  const pv=$('xpv');pv.src=url;pv.hidden=false;if(navigator.canShare)$('xsv').hidden=false;
   $('stat').textContent='Exported '+name;try{d.click();}catch(e){}}
 function expFail(t){EXP.busy=false;$('xt').textContent='Export stopped';$('xph').textContent=t;$('xcn').hidden=true;$('xdone').hidden=false;}
 function updSum(){const R=RES[EXP.res],L=clipLen(),mb=((R.br*(EXP.fps>30?1.4:1)+192e3)*L/8e6);
@@ -453,8 +454,11 @@ function updSum(){const R=RES[EXP.res],L=clipLen(),mb=((R.br*(EXP.fps>30?1.4:1)+
 document.querySelectorAll('#xres button').forEach(b=>b.onclick=()=>{EXP.res=b.dataset.v;updSum();});
 document.querySelectorAll('#xfps button').forEach(b=>b.onclick=()=>{EXP.fps=+b.dataset.v;updSum();});
 $('exp').onclick=()=>{if(!vid.duration){Task.fail('Load a source video first');return;}stop();xv('opt');updSum();};
-$('xcl').onclick=$('xdone').onclick=()=>{xv('off');const b=$('xbar');b.classList.remove('ok');b.style.width='0';$('xdl').hidden=true;$('xcn').hidden=false;$('xdone').hidden=true;};
+$('xcl').onclick=$('xdone').onclick=()=>{xv('off');const pv=$('xpv');pv.pause();pv.removeAttribute('src');pv.hidden=true;$('xsv').hidden=true;const b=$('xbar');b.classList.remove('ok');b.style.width='0';$('xdl').hidden=true;$('xcn').hidden=false;$('xdone').hidden=true;};
 $('xcn').onclick=()=>{EXP.cancel=true;if(recorder&&recorder.state==='recording'){recorder.onstop=null;recorder.stop();stop();expFail('Cancelled.');}};
+$('xpr').onclick=()=>{xv('off');play();};
+$('xsv').onclick=async()=>{try{const d=$('xdl'),b=await (await fetch(EXP.url)).blob(),f=new File([b],d.download,{type:b.type||'video/mp4'});
+  if(navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({files:[f]});else d.click();}catch(e){if(e.name!=='AbortError')$('xdl').click();}};
 $('xgo').onclick=()=>{if(EXP.busy)return;runExport();};
 function seekTo(el,t){return new Promise(res=>{t=Math.max(0,Math.min(t,(el.duration||t)-0.001));if(Math.abs(el.currentTime-t)<0.0005)return res();
   let done=false;const fin=()=>{if(done)return;done=true;el.removeEventListener('seeked',onS);res();};
