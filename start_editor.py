@@ -32,16 +32,10 @@ def library():
     return {k: scan(v) for k, v in FOLDERS.items()}
 
 
-# Serve the editor entry point. This repository currently calls it index.html;
-# keep support for a more specifically named *editor*.html file as well.
-html_pages = sorted(f for f in os.listdir(here) if f.lower().endswith('.html'))
-page = next((f for f in html_pages if 'editor' in f.lower()), None)
-if not page and 'index.html' in html_pages:
-    page = 'index.html'
-if not page and len(html_pages) == 1:
-    page = html_pages[0]
+htmls = [f for f in sorted(os.listdir(here)) if f.lower().endswith('.html')]
+page = next((f for f in htmls if 'editor' in f.lower()), None) or ('index.html' if 'index.html' in htmls else (htmls[0] if htmls else None))
 if not page:
-    sys.exit('No editor HTML file found next to start_editor.py. Add index.html or an *editor*.html file.')
+    sys.exit('No .html file found next to start_editor.py.')
 PAGE_URL = '/' + urllib.parse.quote(page)
 
 
@@ -79,15 +73,12 @@ if srv is None:
     sys.exit('Ports 8000-8019 are all busy. Close other servers and try again.')
 
 lib = library()
-with open('library.json', 'w', encoding='utf-8') as fp:
-    json.dump(lib, fp)  # kept for compatibility; the editor now uses /api/library
-url = 'http://127.0.0.1:%d%s' % (port, PAGE_URL)
-print('Found %d music tracks and %d hook SFX.\nEditor: %s\nKeep this window open while editing.'
+json.dump(lib, open('library.json', 'w'))  # kept for compatibility; the editor now uses /api/library
+url = 'http://localhost:%d%s' % (port, PAGE_URL)
+print('Found %d music tracks and %d hook SFX.\nEditor: %s\nKeep this window open while editing. Ctrl+C to stop.'
       % (len(lib['bgm']), len(lib['sfx']), url))
 threading.Timer(0.8, lambda: webbrowser.open(url)).start()
 try:
     srv.serve_forever()
 except KeyboardInterrupt:
     pass
-finally:
-    srv.server_close()
