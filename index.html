@@ -786,6 +786,8 @@ async function brList(base,depth){
   return out;}
 async function fetchBroll(){
   try{const r=await fetch('/api/broll',{cache:'no-store'});if(r.ok)return await r.json();}catch(e){}
+  /* static hosting (Vercel...): broll.json written by make-manifest.js */
+  try{const r=await fetch('broll.json',{cache:'no-store'});if(r.ok){const j=await r.json();if(j&&Array.isArray(j.files))return j;}}catch(e){}
   for(const d of ['broll','b-roll','B-Roll','b_roll','b roll','Broll','BROLL','B-roll','b-rolls','brolls']){
     try{const f=await brList('/'+encodeURIComponent(d)+'/',0);if(f)return{folder:d,files:f};}catch(e){}}
   throw new Error('HTTP 404');}
@@ -874,7 +876,7 @@ async function autoBroll(fromQueue){
     if(!cues.length){n.textContent='Need captions first: use Auto-transcribe or paste a transcript, then press this again.';return;}
     n.textContent='Scanning the B-roll folder…';
     let j;try{j=await fetchBroll();}
-    catch(e){n.textContent='Could not find the B-roll folder ('+(e.message||e)+'). Make sure a folder named "broll" sits next to index.html, and open this page through start_editor.py (the tab it opens), not by double-clicking index.html.';return;}
+    catch(e){n.textContent='Could not find the B-roll list ('+(e.message||e)+'). Online (Vercel): run "node make-manifest.js" in your project folder, then deploy again so broll.json is uploaded. On your PC: open the page through start_editor.py.';return;}
     const files=j.files||[];
     if(!files.length){n.textContent='No B-roll found. Create a folder named "'+(j.folder||'broll')+'" next to start_editor.py and put your clips in it (e.g. blood_01.mp4, heart1.mp4).';return;}
     autoOn.br=true;
