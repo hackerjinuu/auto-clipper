@@ -140,7 +140,7 @@ a.bl{display:inline-block;text-decoration:none;padding:8px 16px;border-radius:7p
   <textarea id="tr" placeholder="Paste SRT, VTT, [0:05] lines, or plain text (plain text is spread evenly and marked approximate)"></textarea>
   <input type="file" id="trf" accept=".srt,.vtt,.txt">
   <button id="asr" class="p" style="margin-top:8px;width:100%">Auto-transcribe from video</button>
-  <div class="note" id="asrn">Uses Whisper tiny.en in your browser. First run downloads about 40 MB.</div>
+  <div class="note" id="asrn">Uses NVIDIA Parakeet TDT 0.6B v2 from your Cloudflare R2 bucket (WASM / INT8) directly in your browser.</div>
   <div class="note" id="trn"></div>
   <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="bon" checked> Blur controversial words in captions</label>
   <label style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" id="bbp" checked> Bleep (mute + beep) the spoken word in audio</label>
@@ -440,7 +440,7 @@ $('bw').oninput=()=>{clearTimeout(blTm);blTm=setTimeout(()=>{blCompile();build()
 $('bon').onchange=()=>{build();};$('bbp').onchange=()=>{build();};
 $('bwr').onclick=()=>{$('bw').value=BL_DEFAULT.join('\n');blCompile();build();};
 blCompile();
-/* Whisper word timestamps can be zero-length, overlapping or out of order; such cues never show.
+/* ASR word timestamps can be zero-length, overlapping or out of order; such cues never show.
    Make every cue last at least 0.2s, never overlap the next one, and bridge small gaps. */
 function fixCues(cs){
   cs.sort((a,b)=>a.s-b.s);
@@ -995,15 +995,58 @@ $('auto').addEventListener('click',()=>{if(sfxList.length&&$('sfxcut').checked)s
 renderTL(); draw();
 </script>
 <script type="module">
-import {pipeline} from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2';
-let asr=null;
-async function asrRun(pcm){const o={chunk_length_s:30,stride_length_s:5};try{return await asr(pcm,{...o,return_timestamps:'word'});}catch(e){console.warn('word timestamps unavailable',e);return await asr(pcm,{...o,return_timestamps:true});}}
+import {fromUrls} from 'https://esm.sh/parakeet.js@1.4.4';
+/* NVIDIA Parakeet TDT 0.6B v2 (English), run client-side via parakeet.js + onnxruntime-web.
+   Tries WebGPU first (fast encoder on GPU), falls back to WASM if WebGPU isn't available.
+   First run downloads the model (several hundred MB to ~1-2GB depending on backend) and
+   caches it in this browser's IndexedDB, so later runs just reuse the cache. */
+let pk=null, pkBackend=null;
+async function loadParakeet(noteFn){
+  if(pk)return pk;
+  noteFn('Loading Parakeet from your Cloudflare R2 bucket (WASM / INT8)…');
+  const base='https://pub-cffd9b31b5de4a139c407d69c24d4654.r2.dev';
+  pk=await fromUrls({
+    encoderUrl:base+'/encoder-model.int8.onnx',
+    decoderUrl:base+'/decoder_joint-model.int8.onnx',
+    tokenizerUrl:base+'/vocab.txt',
+    backend:'wasm',
+    preprocessorBackend:'js'
+  });
+  pkBackend='wasm';
+  noteFn('Parakeet models loaded from Cloudflare R2.');
+  return pk;
+}
+/* defensively read whichever field names this version of parakeet.js returns */
+function pkWords(result){
+  const list=(result&&(result.words||result.chunks))||[];
+  return list.map(w=>({
+    text:String(w.word??w.text??w.token??'').trim(),
+    s:w.start_time??w.start??(Array.isArray(w.timestamp)?w.timestamp[0]:0),
+    e:w.end_time??w.end??(Array.isArray(w.timestamp)?w.timestamp[1]:0),
+  })).filter(w=>w.text);
+}
+/* runs Parakeet on 16kHz mono PCM and reshapes the result into the same
+   {chunks:[{text,timestamp:[s,e]}, ...]} shape wseg() below already expects,
+   so none of the existing segment/word-grouping logic has to change. */
+async function asrRun(pcm,durSec){
+  const long=(durSec||0)>55;
+  const result=long
+    ? await pk.transcribeLongAudio(pcm,16000,{returnTimestamps:true})
+    : await pk.transcribe(pcm,16000,{returnTimestamps:true,returnConfidences:true});
+  const words=pkWords(result);
+  if(!words.length){
+    const text=String((result&&(result.utterance_text||result.text))||'').trim();
+    return{chunks:text?[{text,timestamp:[0,durSec||0.4]}]:[]};
+  }
+  return{chunks:words.map(w=>({text:w.text,timestamp:[w.s,w.e]}))};
+}
 function wseg(out,off){
   const W=(out.chunks||[]).filter(c=>c.text.trim()).map(c=>({t:c.text.trim(),s:off+c.timestamp[0],e:off+(c.timestamp[1]==null?c.timestamp[0]+0.4:c.timestamp[1])}));
   if(W.some(w=>/\s/.test(w.t))){asrW=[];return W.map(w=>({s:w.s,e:w.e,text:w.t}));}
   asrW=W.map(w=>({s:w.s,e:w.e}));const S=[];let cur=null;
   W.forEach(w=>{if(!cur||cur.n>=9||w.s-cur.e>0.6||/[.!?]$/.test(cur.last)){cur={s:w.s,e:w.e,text:'',n:0,last:''};S.push(cur);}cur.text+=(cur.text?' ':'')+w.t;cur.e=w.e;cur.n++;cur.last=w.t;});
-  return S;}
+  return S;
+}
 const note=t=>{document.getElementById('asrn').textContent=t;Task.msg(t);if(/^Done/.test(t))Task.end('Done · transcript ready');else if(/^Failed/.test(t))Task.fail(t);};
 const pad=(n,l=2)=>String(n).padStart(l,'0');
 const fmt=x=>{const ms=Math.round(x*1000);return pad(Math.floor(ms/3600000))+':'+pad(Math.floor(ms/60000)%60)+':'+pad(Math.floor(ms/1000)%60)+','+pad(ms%1000,3);};
@@ -1023,12 +1066,9 @@ document.getElementById('asr').onclick=async()=>{
     const ab=off.createBuffer(1,len,r); ab.copyToChannel(mono,0);
     const src=off.createBufferSource(); src.buffer=ab; src.connect(off.destination); src.start();
     const pcm=(await off.startRendering()).getChannelData(0);
-    if(!asr){
-      note('Loading model...');
-      asr=await pipeline('automatic-speech-recognition','Xenova/whisper-tiny.en',{progress_callback:p=>{if(p.status==='progress')note('Downloading model '+Math.round(p.progress)+'%');}});
-    }
-    note('Transcribing '+L.toFixed(0)+'s of audio... this can take a minute.');
-    const out=await asrRun(pcm);
+    await loadParakeet(note);
+    note('Transcribing '+L.toFixed(0)+'s of audio with Parakeet... this can take a minute.');
+    const out=await asrRun(pcm,L);
     const chunks=wseg(out,a);
     if(!chunks.length){note('No speech found in that range.');return;}
     document.getElementById('tr').value=chunks.map((c,i)=>(i+1)+'\n'+fmt(c.s)+' --> '+fmt(c.e)+'\n'+c.text).join('\n\n');
@@ -1092,13 +1132,10 @@ document.getElementById('hook').onclick=async()=>{
     hn('Reading audio from video...');
     const pcm=await pcmOf(f,0,180);
     if(!pcm){hn('Could not read audio.');return;}
-    if(!asr){
-      hn('Loading model...');
-      asr=await pipeline('automatic-speech-recognition','Xenova/whisper-tiny.en',{progress_callback:p=>{if(p.status==='progress')hn('Downloading model '+Math.round(p.progress)+'%');}});
-    }
-    hn('Listening for the engaging part... this can take a minute.');
-    const out=await asrRun(pcm);
+    await loadParakeet(hn);
+    hn('Listening for the engaging part with Parakeet... this can take a minute.');
     const L=pcm.length/16000;
+    const out=await asrRun(pcm,L);
     const sg=wseg(out,0);
     if(!sg.length){hn('No speech found in the first 3 minutes.');return;}
     document.getElementById('tr').value=sg.map((c,i)=>(i+1)+'\n'+fmt(c.s)+' --> '+fmt(c.e)+'\n'+c.text).join('\n\n');
