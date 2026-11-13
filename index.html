@@ -199,7 +199,7 @@ a.bl{display:inline-block;text-decoration:none;padding:8px 16px;border-radius:7p
   <label>Music volume</label><input type="range" id="bv" min="0.05" max="0.6" step="0.01" value="0.22">
   <div class="row" style="margin-top:8px"><button id="bgmbtn" class="p">Auto BGM</button><button id="sfxbtn" class="p">Auto Hook SFX</button></div>
   <button id="lib" style="margin-top:8px;width:100%;display:none">Server not found · pick project folder manually</button>
-  <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="sfxcut" checked> Also add a whoosh on B-roll cuts</label>
+  <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="sfxcut" checked> Add a random transition sound at the start of B-roll clips (folder: transitionsfx)</label>
  </div>
 </section>
 </main>
@@ -712,6 +712,7 @@ async function runExport(){
   }finally{if(FS){FS.close();}VF=null;CT=null;if(!legacy){S=1;if(cv.width!==W){cv.width=W;cv.height=H;}try{vid.currentTime=savedT;}catch(e){}draw();}}
 }
 /* ---- zoom / music / hook SFX ---- */
+let bgmChoice=null,hookChoice=null,keepPick=false,trSeed=Math.floor(Math.random()*1e9),transList=[];
 let bgmList=[],sfxList=[],sfxT=[],bgmNode=null,bgmG=null,bgmBase=0,live=[],lastV=-9;
 const AUD=/\.(mp3|wav|ogg|m4a|aac|flac|opus)$/i;
 function zoomK(rel){const m=$('zm').value;if(m==='none')return 1;const S=$('zs').value/100,D=$('zw').checked?clipLen():+$('zd').value;let p=Math.min(1,Math.max(0,rel/D));p=1-Math.pow(1-p,3);return m==='in'?1+S*p:1+S*(1-p);}
@@ -726,7 +727,9 @@ function bleepTick(t){if(!vG||!actx)return;const on=t!=null&&blIv.some(x=>t+0.03
   vG.gain.setTargetAtTime(on?0:1,T,0.004);bpG.gain.setTargetAtTime(on?0.3:0,T,0.004);}
 function outTo(n){n.connect(actx.destination);n.connect(adest);}
 function stopAudio(){try{bgmNode&&bgmNode.stop();}catch(e){}bgmNode=null;live.forEach(n=>{try{n.stop();}catch(e){}});live=[];}
-function bgmPick(){if(!bgmList.length)return null;const v=$('bsel').value;return bgmList.find(b=>b.name===v)||bgmList[0];}
+function pickRand(list,lastName){const c=list.length>1?list.filter(x=>x.name!==lastName):list;return c[Math.floor(Math.random()*c.length)];}
+function rng(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function bgmPick(){if(!bgmList.length)return null;const v=$('bsel').value;let p=bgmList.find(b=>b.name===v);if(!p&&bgmChoice)p=bgmList.find(b=>b.name===bgmChoice);return p||bgmList[0];}
 function startBgm(){const p=bgmPick();if(!p||bgmNode)return;ensureAudio();scoreBgm(p,clipLen());
   const n=actx.createBufferSource();n.buffer=p.buf;n.loop=true;bgmG=actx.createGain();bgmG.gain.value=0;n.connect(bgmG);outTo(bgmG);n.start(0,p.off);bgmNode=n;bgmG.gain.setValueAtTime(bgmBase*(+$('bv').value)*0.6,actx.currentTime);}
 function restartBgm(){if(!playing)return;try{bgmNode&&bgmNode.stop();}catch(e){}bgmNode=null;startBgm();}
@@ -742,7 +745,8 @@ function scoreBgm(p,L){const e=p.e,w=Math.max(1,Math.min(e.length,Math.floor(L/p
     const cv=Math.sqrt(q/w)/(m+1e-6),sc=(1-Math.min(1,cv))+0.5*Math.min(1,m/0.12)-2*z/w;if(sc>best){best=sc;bi=i;bm=m;}}
   p.sc=best+(p.dur>=L?0.3:0);p.off=bi*p.hop;bgmBase=p.n=0.25/Math.max(bm,0.01);}
 async function analyse(f,kind){
-  ensureAudio();const buf=await actx.decodeAudioData(await f.arrayBuffer()),d=buf.getChannelData(0),hop=Math.floor(buf.sampleRate*0.05),n=Math.floor(d.length/hop),e=new Float32Array(n);
+  ensureAudio();let buf;try{buf=await actx.decodeAudioData(await f.arrayBuffer());}catch(e){buf=await decodeSrc(f);}
+  const d=buf.getChannelData(0),hop=Math.floor(buf.sampleRate*0.05),n=Math.floor(d.length/hop),e=new Float32Array(n);
   for(let i=0;i<n;i++){let s=0;for(let j=i*hop;j<(i+1)*hop;j+=4)s+=d[j]*d[j];e[i]=Math.sqrt(s/(hop/4));}
   const p={name:f.name,buf,dur:buf.duration,e,hop:hop/buf.sampleRate};
   if(kind==='b'){scoreBgm(p,clipLen());}
@@ -761,17 +765,29 @@ async function loadLib(files){
   $('bsel').innerHTML='<option value="auto">Auto · best track</option>'+bgmList.map(b=>'<option>'+b.name+'</option>').join('');
   n.textContent=bgmList.length+' music track(s), '+sfxList.length+' hook SFX loaded. Best music: '+(bgmList[0]?bgmList[0].name:'none')+'. Music is scored for steady energy, no dead air and enough length, then ducked under speech.';
   if(sfxList.length)await placeSfx();renderTL();}
-function addSfx(s,hit,v){const off=Math.max(0,s.pk-hit);sfxT.push({s,t:Math.max(0,hit-s.pk),off,hit,v,dur:Math.min(s.dur-off,4),done:0});}
-async function placeSfx(){
+function addSfx(s,hit,v,md){const off=Math.max(0,s.pk-hit);sfxT.push({s,t:Math.max(0,hit-s.pk),off,hit,v,dur:Math.min(s.dur-off,md||4),done:0});}
+/* transition sounds: placed at the start of B-roll clips, a different random pick each time and only on ~70% of clips, never the same file twice in a row */
+function placeTrans(){
+  sfxT=sfxT.filter(x=>!x.tr);
+  if(!$('sfxcut').checked||!transList.length)return 0;
+  const R=rng(trSeed),bs=broll.filter(b=>b.dur>0).sort((a,b)=>a.start-b.start);let last=-1,n=0;
+  bs.forEach(b=>{const keep=R(),pk=R();if(keep>0.7)return;
+    let i=Math.floor(pk*transList.length);
+    if(transList.length>1&&i===last)i=(i+1+Math.floor(R()*(transList.length-1)))%transList.length;
+    last=i;addSfx(transList[i],b.start,0.7,2.5);sfxT[sfxT.length-1].tr=1;n++;});
+  return n;}
+async function placeSfx(reroll){
   if(!sfxList.length){$('stat').textContent='Select the project folder first.';return;}
   try{await getEnv();}catch(e){}
   sfxT=[];let hit=0;const E=envC;
   if(!cutK&&E){let t=t0();const end=Math.min(t0()+10,E.db.length*E.step);while(t<end&&E.db[Math.round(t/E.step)]<=E.thr)t+=E.step;hit=Math.max(0,t-t0()-0.05);}
   else if(cues.length)hit=Math.max(0,otime(cues[0].s)-0.05);
-  const H=[...sfxList].sort((a,b)=>b.hs-a.hs)[0];addSfx(H,hit,1);
-  if($('sfxcut').checked){const T=sfxList.filter(x=>x!==H).sort((a,b)=>b.ts-a.ts);
+  if(reroll)trSeed=Math.floor(Math.random()*1e9);
+  if(reroll||!hookChoice||!sfxList.some(x=>x.name===hookChoice))hookChoice=pickRand(sfxList,hookChoice).name;
+  const H=sfxList.find(x=>x.name===hookChoice);addSfx(H,hit,1);
+  if($('sfxcut').checked&&!transList.length){const T=sfxList.filter(x=>x!==H).sort((a,b)=>b.ts-a.ts);
     if(T.length)broll.filter(b=>b.dur>0).sort((a,b)=>a.start-b.start).forEach((b,i)=>addSfx(T[i%T.length],b.start,0.6));}
-  renderTL();$('stat').textContent='Hook SFX "'+H.name+'" lands on the first spoken word at '+hit.toFixed(2)+'s.';}
+  const nt=placeTrans();renderTL();$('stat').textContent='Hook SFX "'+H.name+'" lands on the first spoken word at '+hit.toFixed(2)+'s.'+(nt?' + '+nt+' transition sound(s) on B-roll.':'');}
 /* ---- Auto B-roll from captions: keyword in caption -> clip with that name in the "broll" folder ---- */
 /* new start_editor.py answers /api/broll; an OLD one does not (404), so fall back to the folder listing every Python file server gives */
 async function brList(base,depth){
@@ -893,7 +909,10 @@ async function autoBroll(fromQueue){
     const miss=idx.missing.length?' No clip found for rule target: '+idx.missing.join(', ')+'.':'';
     n.textContent=(plan.length?'Placed '+plan.length+' clip(s), max '+brMax()+'s each: '+used+'.':'No caption word matched a B-roll filename.')+' Keywords available: '+all+'.'+miss;
     $('stat').textContent=plan.length?plan.length+' B-roll clip(s) inserted from captions.':'No keyword matches in the captions.';
-    if(!fromQueue&&autoOn.sfx&&$('sfxcut').checked)await placeSfx();
+    if($('sfxcut').checked){
+      try{const LL=await fetchLib();if((LL.trans&&LL.trans.length)||transList.length)await loadFromServer();}catch(e){}
+      if(autoOn.sfx&&sfxList.length){if(!fromQueue)await placeSfx();}else{const nt=placeTrans();renderTL();if(nt)$('stat').textContent+=' + '+nt+' transition sound(s).';}
+    }
   }finally{brBusy=false;if(brAgain){brAgain=false;setTimeout(()=>autoBroll(true),0);}}
 }
 $('brauto').onclick=()=>autoBroll(false);
@@ -928,13 +947,14 @@ function loadFromServer(){
         const r=await fetch(it.url);if(!r.ok)throw new Error(it.name+': HTTP '+r.status);
         anCache.set(key,await analyse(new File([await r.blob()],it.name),kind));}
       return anCache.get(key);};
-    const nb=[],ns=[];
+    const nb=[],ns=[],nt=[];
     for(let i=0;i<L.bgm.length;i++){try{nb.push(await get(L.bgm[i],'b',i,L.bgm.length));}catch(e){console.warn(e);}}
     for(let i=0;i<L.sfx.length;i++){try{ns.push(await get(L.sfx[i],'s',i,L.sfx.length));}catch(e){console.warn(e);}}
+    for(let i=0;i<(L.trans||[]).length;i++){try{nt.push(await get(L.trans[i],'t',i,L.trans.length));}catch(e){console.warn(e);}}
     [...anCache.keys()].forEach(k=>{if(!keep.has(k))anCache.delete(k);});
     const len=clipLen();nb.forEach(p=>scoreBgm(p,len));nb.sort((a,b)=>b.sc-a.sc);
-    bgmList=nb;sfxList=ns;fillBsel(nb.map(b=>b.name));$('lib').style.display='none';
-    libNote(nb.length+' music track(s), '+ns.length+' hook SFX ready'+(nb[0]?'. Best music: '+nb[0].name:'')+'. Folders are re-scanned each time you use Auto BGM / Auto Hook SFX.');
+    bgmList=nb;sfxList=ns;transList=nt;fillBsel(nb.map(b=>b.name));$('lib').style.display='none';
+    libNote(nb.length+' music track(s), '+ns.length+' hook SFX, '+nt.length+' transition SFX ready'+'. Folders are re-scanned each time you use Auto BGM / Auto Hook SFX.');
     return L;
   })().finally(()=>{libBusy=null;});
   return libBusy;}
@@ -943,15 +963,17 @@ async function autoBgm(){
   try{await loadFromServer();}catch(e){if(!bgmList.length){autoOn.bgm=false;srvDown(e);return false;}}
   if(!bgmList.length){autoOn.bgm=false;libNote('No audio files found in the "bgm" folder.');return false;}
   const L=clipLen();bgmList.forEach(p=>scoreBgm(p,L));bgmList.sort((a,b)=>b.sc-a.sc);
-  renderTL();restartBgm();$('stat').textContent='Auto BGM: "'+bgmList[0].name+'" (starting '+bgmList[0].off.toFixed(1)+'s into the track, ducked under speech).';return true;}
+  if(!keepPick||!bgmChoice||!bgmList.some(b=>b.name===bgmChoice))bgmChoice=pickRand(bgmList,bgmChoice).name;
+  const P=bgmPick();
+  renderTL();restartBgm();$('stat').textContent='Auto BGM (random pick): "'+P.name+'" (starting '+P.off.toFixed(1)+'s into the track, ducked under speech). Press Auto BGM again for a different one.';return true;}
 async function autoHook(){
   autoOn.sfx=true;
   try{await loadFromServer();}catch(e){if(!sfxList.length){autoOn.sfx=false;srvDown(e);return false;}}
   if(!sfxList.length){autoOn.sfx=false;libNote('No audio files found in the "best hook" folder.');return false;}
-  await placeSfx();$('stat').textContent+=' Press Preview to hear it.';return true;}
+  await placeSfx(true);$('stat').textContent+=' Press Auto Hook SFX again for a different one. Press Preview to hear it.';return true;}
 /* when start time, length, silence-cut or transcript change, redo whatever the user switched to Auto */
 function queueAuto(){if(!autoOn.bgm&&!autoOn.sfx&&!autoOn.br)return;clearTimeout(qT);
-  qT=setTimeout(async()=>{if(autoOn.br)await autoBroll(true);if(autoOn.bgm)await autoBgm();if(autoOn.sfx)await placeSfx();},200);}
+  qT=setTimeout(async()=>{if(autoOn.br)await autoBroll(true);if(autoOn.bgm){keepPick=true;try{await autoBgm();}finally{keepPick=false;}}if(autoOn.sfx)await placeSfx();},200);}
 autoBgm=wrapTask(autoBgm,'Auto BGM','bgmbtn','music applied');
 autoHook=wrapTask(autoHook,'Auto Hook SFX','sfxbtn','hook SFX applied');
 {const _rc=recut;recut=async function(){if(!$('cut').checked)return _rc();Task.begin('Analyzing audio for silence');

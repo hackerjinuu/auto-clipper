@@ -6,6 +6,7 @@
 const fs = require('fs'), path = require('path');
 const here = __dirname;
 const AUD = /\.(mp3|wav|ogg|m4a|aac|flac|opus)$/i;
+const TRN = /\.(mp3|wav|ogg|m4a|aac|flac|opus|mp4|mov|webm|m4v)$/i;   // transition SFX: audio or mp4 clips with sound
 const VIS = /\.(mp4|mov|webm|m4v|gif|png|jpe?g|webp)$/i;
 
 function walk(dir, re) {
@@ -26,9 +27,11 @@ function walk(dir, re) {
 const brollDir = fs.readdirSync(here, { withFileTypes: true })
   .find(d => d.isDirectory() && ['broll', 'brolls'].includes(d.name.toLowerCase().replace(/[^a-z0-9]/g, '')));
 const broll = brollDir ? walk(path.join(here, brollDir.name), VIS) : [];
-const lib = { bgm: walk(path.join(here, 'bgm'), AUD), sfx: walk(path.join(here, 'best hook'), AUD) };
+const transDir = fs.readdirSync(here, { withFileTypes: true })
+  .find(d => d.isDirectory() && /^trans[a-z]*sfx$/.test(d.name.toLowerCase().replace(/[^a-z0-9]/g, '')));   // transitionsfx / transationsfx
+const lib = { bgm: walk(path.join(here, 'bgm'), AUD), sfx: walk(path.join(here, 'best hook'), AUD), trans: transDir ? walk(path.join(here, transDir.name), TRN) : [] };
 
 fs.writeFileSync(path.join(here, 'broll.json'), JSON.stringify({ folder: brollDir ? brollDir.name : 'broll', files: broll }));
 fs.writeFileSync(path.join(here, 'library.json'), JSON.stringify(lib));
 console.log(`broll.json: ${broll.length} B-roll file(s)` + (brollDir ? '' : '  (NO "broll" folder found next to this script!)'));
-console.log(`library.json: ${lib.bgm.length} music track(s), ${lib.sfx.length} hook SFX`);
+console.log(`library.json: ${lib.bgm.length} music track(s), ${lib.sfx.length} hook SFX, ${lib.trans.length} transition SFX`);
