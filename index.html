@@ -773,6 +773,22 @@ async function placeSfx(){
     if(T.length)broll.filter(b=>b.dur>0).sort((a,b)=>a.start-b.start).forEach((b,i)=>addSfx(T[i%T.length],b.start,0.6));}
   renderTL();$('stat').textContent='Hook SFX "'+H.name+'" lands on the first spoken word at '+hit.toFixed(2)+'s.';}
 /* ---- Auto B-roll from captions: keyword in caption -> clip with that name in the "broll" folder ---- */
+/* new start_editor.py answers /api/broll; an OLD one does not (404), so fall back to the folder listing every Python file server gives */
+async function brList(base,depth){
+  const r=await fetch(base,{cache:'no-store'});if(!r.ok)return null;
+  const doc=new DOMParser().parseFromString(await r.text(),'text/html'),out=[];
+  for(const a of doc.querySelectorAll('a[href]')){
+    const h=a.getAttribute('href');
+    if(!h||/^[?#\/.]/.test(h)||/^[a-z]+:/i.test(h))continue;
+    if(h.endsWith('/')){if(depth<2){const sub=await brList(base+h,depth+1);if(sub)out.push(...sub);}continue;}
+    let name=h;try{name=decodeURIComponent(h);}catch(e){}
+    if(/\.(mp4|mov|webm|m4v|gif|png|jpg|jpeg|webp)$/i.test(name))out.push({url:base+h,name,size:0,mtime:0});}
+  return out;}
+async function fetchBroll(){
+  try{const r=await fetch('/api/broll',{cache:'no-store'});if(r.ok)return await r.json();}catch(e){}
+  for(const d of ['broll','b-roll','B-Roll','b_roll','b roll','Broll','BROLL','B-roll','b-rolls','brolls']){
+    try{const f=await brList('/'+encodeURIComponent(d)+'/',0);if(f)return{folder:d,files:f};}catch(e){}}
+  throw new Error('HTTP 404');}
 const brAssets=new Map();let brSeq=1000,brBusy=false,brAgain=false;
 let brRules=[];try{brRules=JSON.parse(localStorage.getItem('brRules')||'[]').filter(r=>r&&Array.isArray(r.w)&&r.t);}catch(e){brRules=[];}
 const brEsc=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -788,7 +804,7 @@ $('bradd').onclick=()=>{
   brRules.push({w,t});brSaveRules();brRenderRules();$('brw').value='';$('brt').value='';
   if(autoOn.br)autoBroll(true);else $('brn').textContent='Rule added. Press "Auto B-roll from captions" to apply it.';};
 brRenderRules();
-fetch('/api/broll',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{if(j&&j.files)brFillTargets(j.files);}).catch(()=>{});
+fetchBroll().then(j=>{if(j&&j.files)brFillTargets(j.files);}).catch(()=>{});
 const brMax=()=>{const v=+$('brmax').value;return v>0?v:2;};
 const BR_ALIAS={injection:['needle','syringe','pinning'],blood:['bloodwork','bleeding','bloodstream'],heart:['cardiac','cardiovascular'],muscle:['bicep','biceps','gains'],fire:['flame','flames','burn','burning']};
 function brStem(w){w=String(w).toLowerCase().replace(/[^a-z0-9]/g,'');
@@ -857,8 +873,8 @@ async function autoBroll(fromQueue){
   try{
     if(!cues.length){n.textContent='Need captions first: use Auto-transcribe or paste a transcript, then press this again.';return;}
     n.textContent='Scanning the B-roll folder…';
-    let j;try{const r=await fetch('/api/broll',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);j=await r.json();}
-    catch(e){n.textContent='Cannot reach the editor server ('+(e.message||e)+'). Close old start_editor.py windows, save the NEW start_editor.py, run it again and use the tab it opens.';return;}
+    let j;try{j=await fetchBroll();}
+    catch(e){n.textContent='Could not find the B-roll folder ('+(e.message||e)+'). Make sure a folder named "broll" sits next to index.html, and open this page through start_editor.py (the tab it opens), not by double-clicking index.html.';return;}
     const files=j.files||[];
     if(!files.length){n.textContent='No B-roll found. Create a folder named "'+(j.folder||'broll')+'" next to start_editor.py and put your clips in it (e.g. blood_01.mp4, heart1.mp4).';return;}
     autoOn.br=true;
