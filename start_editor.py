@@ -1,5 +1,5 @@
 """Run this once (double-click or `python start_editor.py`) and keep the window open.
-Keep it in the same folder as the editor, the "bgm" folder and the "best hook" folder.
+Keep it in the same folder as the editor, the "bgm" folder, the "best hook" folder and the "broll" folder.
 
 It serves the editor in your browser AND answers the editor's requests. Every time you pick
 Auto BGM / Auto Hook SFX in the page, the page calls /api/library, this script re-scans both
@@ -9,6 +9,7 @@ import http.server, socketserver, json, os, sys, urllib.parse, webbrowser, threa
 
 here = os.path.dirname(os.path.abspath(__file__)); os.chdir(here)
 AUD = ('.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.opus')
+VIS = ('.mp4', '.mov', '.webm', '.m4v', '.gif', '.png', '.jpg', '.jpeg', '.webp')   # B-roll video + images
 FOLDERS = {'bgm': 'bgm', 'sfx': 'best hook'}
 
 
@@ -26,6 +27,27 @@ def scan(d):
                     out.append({'url': urllib.parse.quote(rel), 'name': f,
                                 'size': st.st_size, 'mtime': int(st.st_mtime)})
     return sorted(out, key=lambda x: x['url'].lower())
+
+
+def broll_dir():
+    """Find the B-roll folder next to this script: broll / b-roll / B-Roll / b_roll / b roll ..."""
+    for n in sorted(os.listdir(here)):
+        if os.path.isdir(os.path.join(here, n)) and ''.join(c for c in n.lower() if c.isalnum()) in ('broll', 'brolls'):
+            return n
+    return None
+
+
+def scan_broll():
+    d = broll_dir(); out = []
+    if d:
+        for root, _, files in os.walk(os.path.join(here, d)):
+            for f in files:
+                if f.lower().endswith(VIS):
+                    full = os.path.join(root, f)
+                    rel = os.path.relpath(full, here).replace(os.sep, '/')
+                    st = os.stat(full)
+                    out.append({'url': urllib.parse.quote(rel), 'name': f, 'size': st.st_size, 'mtime': int(st.st_mtime)})
+    return d, sorted(out, key=lambda x: x['name'].lower())
 
 
 def library():
@@ -56,6 +78,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if path == '/api/broll':
+            d, files = scan_broll()
+            body = json.dumps({'folder': d or 'broll', 'files': files}).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path in ('', '/'):
             self.send_response(302); self.send_header('Location', PAGE_URL); self.end_headers(); return
         super().do_GET()
@@ -75,8 +106,9 @@ if srv is None:
 lib = library()
 json.dump(lib, open('library.json', 'w'))  # kept for compatibility; the editor now uses /api/library
 url = 'http://localhost:%d%s' % (port, PAGE_URL)
-print('Found %d music tracks and %d hook SFX.\nEditor: %s\nKeep this window open while editing. Ctrl+C to stop.'
-      % (len(lib['bgm']), len(lib['sfx']), url))
+_bd, _bf = scan_broll()
+print('Found %d music tracks, %d hook SFX and %d B-roll clips (folder: %s).\nEditor: %s\nKeep this window open while editing. Ctrl+C to stop.'
+      % (len(lib['bgm']), len(lib['sfx']), len(_bf), _bd or 'none - create a folder named "broll"', url))
 threading.Timer(0.8, lambda: webbrowser.open(url)).start()
 try:
     srv.serve_forever()

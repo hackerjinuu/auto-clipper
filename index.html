@@ -142,10 +142,23 @@ a.bl{display:inline-block;text-decoration:none;padding:8px 16px;border-radius:7p
   <button id="asr" class="p" style="margin-top:8px;width:100%">Auto-transcribe from video</button>
   <div class="note" id="asrn">Uses Whisper tiny.en in your browser. First run downloads about 40 MB.</div>
   <div class="note" id="trn"></div>
+  <label style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="bon" checked> Blur controversial words in captions</label>
+  <label style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" id="bbp" checked> Bleep (mute + beep) the spoken word in audio</label>
+  <textarea id="bw" style="min-height:90px" spellcheck="false" placeholder="One word or phrase per line (or comma separated)"></textarea>
+  <div class="row"><button id="bwr" type="button">Reset to default list</button></div>
+  <div class="note" id="bwn"></div>
  </div>
  <div class="card"><h3>4 · B-roll</h3>
   <input type="file" id="br" accept="video/*,image/*" multiple>
-  <div class="row" style="margin-top:8px"><button id="auto">Auto-place</button><button id="clr">Clear</button></div>
+  <label>Max B-roll length per clip (seconds)</label><input type="number" id="brmax" min="0.5" max="10" step="0.5" value="2" style="width:100%">
+  <button id="brauto" class="p" style="margin-top:8px;width:100%">Auto B-roll from captions</button>
+  <div class="note" id="brn">Reads the "broll" folder next to start_editor.py. A clip named blood_01.mp4 / blood1.mp4 is shown when a caption says "blood". Several numbered files for one keyword are used in turn.</div>
+  <label style="margin-top:10px">Extra trigger words → B-roll clip</label>
+  <input id="brw" placeholder="Caption words or phrases, comma separated (e.g. needle, jab, growth hormone)" style="width:100%">
+  <input id="brt" list="brtl" placeholder="B-roll name (e.g. injection or blood_02.mp4)" style="width:100%;margin-top:6px"><datalist id="brtl"></datalist>
+  <button id="bradd" type="button" style="margin-top:6px;width:100%">Add word rule</button>
+  <div id="brrules" class="note"></div>
+  <div class="row" style="margin-top:8px"><button id="auto">Auto-place (manual files)</button><button id="clr">Clear</button></div>
   <div class="note">Auto-place is deterministic (round-robin, no adjacent repeats). Click a B-roll block on the timeline to remove it. Semantic AI matching needs the worker (guide §13).</div>
  </div>
 </section>
@@ -384,12 +397,71 @@ function wordTimes(sg){
   snap(sg);const wt=w.map(x=>x.length+2),tot=wt.reduce((a,b)=>a+b,0),D=sg.e-sg.s;let c=sg.s;
   return w.map((t,i)=>{const d=D*wt[i]/tot,r={t,s:c,e:c+d};c+=d;return r;});
 }
+const BL_DEFAULT=["steroids", "hormone", "fuck", "shit", "bitch", "dick", "god damn", "damn", "tren", "trenbolone", "deca", "nandrolone", "anadrol", "dbol", "dianabol", "winstrol", "var", "anavar", "halo", "halotestin", "test", "testosterone", "inject", "injecting", "injection", "shot", "needle", "syringe", "vial", "sarms", "peptides", "growth hormone", "insulin", "death", "die", "killed", "overdose", "drug", "drugs", "injectables", "tits", "prolactin", "caber", "prami", "letro", "viagra", "cialis", "aromatase inhibitor", "serm", "nolva", "clomid", "hcg", "blood", "estradiol", "kidney function", "anxiety", "paranoia", "psychosis", "aggression", "violence", "depression", "suicidal", "suicide", "lethal", "diuretic", "lasix", "aldactone", "spironolactone", "dnp", "thermogenic", "clen", "clenbuterol", "t3", "cytomel", "sterile", "sperm", "testicle"];
+let blT=[],blIv=[],vG=null,bpG=null,lastBr=null;
+function blCompile(){
+  const raw=$('bw').value.split(/[\n,]+/).map(x=>x.trim().toLowerCase()).filter(Boolean);
+  blT=[...new Set(raw)].map(t=>t.split(/\s+/).map(w=>w.replace(/[^a-z0-9']/g,'')).filter(Boolean))
+    .filter(a=>a.length).map(a=>a.map(w=>new RegExp('^'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+"(?:s|es|ed|d|ing|er|ers|in')?$")))
+    .sort((a,b)=>b.length-a.length);
+  $('bwn').textContent=blT.length+' words/phrases in the blur list.';
+  try{localStorage.setItem('blurWords',$('bw').value);}catch(e){}
+}
+function blNorm(t){return t.toLowerCase().replace(/[^a-z0-9'\-]/g,'');}
+function blWord(n,re){return re.test(n)||n.split('-').some(p=>p&&re.test(p));}
+/* marks .bl=true on every word of wt that is in the blur list (also multi-word phrases); returns how many */
+function markBlur(wt){
+  wt.forEach(x=>{x.bl=false;}); if(!$('bon').checked||!blT.length)return 0;
+  const n=wt.map(x=>blNorm(x.t));let cnt=0;
+  for(let i=0;i<wt.length;i++){
+    for(const t of blT){
+      if(i+t.length>wt.length)continue;
+      if(t.every((re,k)=>blWord(n[i+k],re))){for(let k=0;k<t.length;k++){if(!wt[i+k].bl){wt[i+k].bl=true;cnt++;}}break;}
+    }
+  }
+  return cnt;
+}
+function drawBlur(w,x,size,col,stroke,k){
+  g.save();const r=size*0.2;
+  if('filter' in g){
+    g.filter='blur('+(r*S)+'px)';g.shadowColor='transparent';
+    if(stroke){g.lineWidth=size/9;g.strokeStyle='#000';g.strokeText(w,x,0);}
+    g.fillStyle=col;g.fillText(w,x,0);
+  }else{ /* Safari fallback: draw only the blurred shadow, text itself is pushed off-canvas */
+    const OFF=20000;g.shadowColor=col;g.shadowBlur=r*S*1.6;g.shadowOffsetX=OFF;g.shadowOffsetY=0;g.fillStyle=col;
+    g.fillText(w,x-OFF/k,0);g.fillText(w,x-OFF/k,0);
+  }
+  g.restore();
+}
+(function(){let v=null;try{v=localStorage.getItem('blurWords');}catch(e){}
+  $('bw').value=v&&v.trim()?v:BL_DEFAULT.join('\n');})();
+let blTm=null;
+$('bw').oninput=()=>{clearTimeout(blTm);blTm=setTimeout(()=>{blCompile();build();},300);};
+$('bon').onchange=()=>{build();};$('bbp').onchange=()=>{build();};
+$('bwr').onclick=()=>{$('bw').value=BL_DEFAULT.join('\n');blCompile();build();};
+blCompile();
+/* Whisper word timestamps can be zero-length, overlapping or out of order; such cues never show.
+   Make every cue last at least 0.2s, never overlap the next one, and bridge small gaps. */
+function fixCues(cs){
+  cs.sort((a,b)=>a.s-b.s);
+  for(let i=0;i<cs.length;i++){
+    const c=cs[i],nx=cs[i+1];
+    if(!(c.e>=c.s+0.2))c.e=c.s+0.2;
+    if(nx){
+      if(nx.s<c.e){ if(nx.s>=c.s+0.1)c.e=nx.s; else {nx.s=c.e; if(nx.e<nx.s+0.2)nx.e=nx.s+0.2;} }
+      else if(nx.s-c.e<0.4)c.e=nx.s;
+    }
+  }
+}
 function build(){
   segs=parseTr($('tr').value); cues=[]; const n=+$('wn').value;
-  segs.forEach(sg=>{const wt=wordTimes(sg);
+  let nBl=0; blIv=[]; const pad=(approx||!asrW.length)?0.12:0.05;
+  segs.forEach(sg=>{const wt=wordTimes(sg);nBl+=markBlur(wt);
+    if($('bbp').checked)wt.forEach(x=>{if(x.bl)blIv.push({s:Math.max(0,x.s-pad),e:x.e+pad});});
     for(let i=0;i<wt.length;i+=n){const grp=wt.slice(i,i+n);cues.push({s:grp[0].s,e:grp[grp.length-1].e,words:grp.map(x=>x.t),wt:grp});}});
-  cues.forEach((c,i)=>{const nx=cues[i+1];if(nx&&nx.s>c.e&&nx.s-c.e<0.25)c.e=nx.s;});
-  $('trn').textContent=segs.length?(segs.length+' segments, '+cues.length+' caption cues'+(approx?' · timings approximate (estimated)':(asrW.length?' · word-level timing':''))):'';
+  blIv.sort((a,b)=>a.s-b.s);blIv=blIv.reduce((o,x)=>{const l=o[o.length-1];if(l&&x.s<=l.e+0.02)l.e=Math.max(l.e,x.e);else o.push(x);return o;},[]);
+  fixCues(cues);
+  $('trn').textContent=segs.length?(segs.length+' segments, '+cues.length+' caption cues'+(approx?' · timings approximate (estimated)':(asrW.length?' · word-level timing':''))+(nBl?' · '+nBl+' word'+(nBl>1?'s':'')+' blurred':'')):'';
   renderTL(); draw(); queueAuto();
 }
 const FR={'1:1':1,'7:6':7/6,'4:5':4/5,'4:3':4/3,'16:9':16/9,'9:16':9/16};
@@ -421,7 +493,8 @@ function draw(){
   if(!vid.videoWidth&&!F.full){g.fillStyle='#161616';g.fillRect(F.x,F.y,F.w,F.h);}
   if(vid.videoWidth){
     const rel=otime(curT()); const b=curBroll(rel);
-    broll.forEach(x=>{if(x.type==='video'){if(x===b){if(x.el.paused&&playing)x.el.play().catch(()=>{});}else if(!x.el.paused)x.el.pause();}});
+    if(b!==lastBr){if(b&&b.type==='video'&&playing){try{b.el.currentTime=0;}catch(e){}}lastBr=b;}
+    broll.forEach(x=>{if(x.type==='video'){if(x===b){if(x.el.paused&&playing)x.el.play().catch(()=>{});}else if(!x.el.paused&&!(b&&b.el===x.el))x.el.pause();}});
     g.save();g.beginPath();g.rect(F.x,F.y,F.w,F.h);g.clip();
     if(b){const w=b.type==='video'?b.el.videoWidth:b.el.naturalWidth,h=b.type==='video'?b.el.videoHeight:b.el.naturalHeight;
       if(w){const k=Math.max(F.w/w,F.h/h);g.drawImage(b.el,F.x+(F.w-w*k)/2,F.y+(F.h-h*k)/2,w*k,h*k);} }
@@ -441,7 +514,9 @@ function draw(){
       words.forEach((w,i)=>{
         if(sty==='kinetic'||sty==='karaoke'||sty==='redkw'){g.shadowColor='rgba(0,0,0,.8)';g.shadowBlur=14;g.shadowOffsetY=4;g.lineWidth=size/9;g.strokeStyle='#000';g.strokeText(w,x,0);}
         else if(sty==='minimal'){g.shadowColor='rgba(0,0,0,.6)';g.shadowBlur=6;g.shadowOffsetY=2;}
-        g.fillStyle=(i===kw&&sty!=='minimal')?$('hc').value:'#fff';
+        const colr=(i===kw&&sty!=='minimal')?$('hc').value:'#fff';
+        if(c.wt[i]&&c.wt[i].bl){drawBlur(w,x,size,colr,sty==='kinetic'||sty==='karaoke'||sty==='redkw',S*sc);x+=ws[i]+gap;return;}
+        g.fillStyle=colr;
         g.fillText(w,x,0);x+=ws[i]+gap;});
       g.restore();
     }
@@ -452,15 +527,15 @@ function advance(){const R=ranges(),t=vid.currentTime;
   if(t>=R[R.length-1].b-0.02||vid.ended)return true;
   for(let i=0;i<R.length-1;i++){if(t>=R[i].b-0.02&&t<R[i+1].a-0.05){vid.currentTime=R[i+1].a;break;}}
   return false;}
-function loop(){draw(); if(playing){ if(advance()){stop();return;} const rel=otime(vid.currentTime);fireSfx(rel);duck(rel); raf=requestAnimationFrame(loop);} }
-function play(){if(!vid.duration)return;try{ensureAudio();}catch(e){}stopAudio();sfxT.forEach(x=>x.done=0);getEnv().catch(()=>{});vid.currentTime=ranges()[0].a;playing=true;vid.play();startBgm();loop();$('play').textContent='■ Stop';}
-function stop(){playing=false;vid.pause();stopAudio();broll.forEach(b=>b.type==='video'&&b.el.pause());cancelAnimationFrame(raf);$('play').textContent='▶ Preview';
+function loop(){draw(); if(playing){ if(advance()){stop();return;} const rel=otime(vid.currentTime);fireSfx(rel);duck(rel);bleepTick(vid.currentTime); raf=requestAnimationFrame(loop);} }
+function play(){if(!vid.duration)return;lastBr=null;try{ensureAudio();}catch(e){}stopAudio();sfxT.forEach(x=>x.done=0);getEnv().catch(()=>{});vid.currentTime=ranges()[0].a;playing=true;vid.play();startBgm();loop();$('play').textContent='■ Stop';}
+function stop(){playing=false;vid.pause();stopAudio();bleepTick(null);broll.forEach(b=>b.type==='video'&&b.el.pause());cancelAnimationFrame(raf);$('play').textContent='▶ Preview';
   if(recorder&&recorder.state==='recording')recorder.stop();draw();}
 function renderTL(){
   const L=clipLen()||1, pc=x=>(100*x/L)+'%';
   $('t1').innerHTML=ranges().map((r,i)=>'<i style="left:'+pc(r.o)+';width:'+pc(r.b-r.a)+';background:#3a3a3a;box-shadow:inset -1px 0 0 '+(cutK?'#b8ff3d':'transparent')+'">'+(i===0?'Speaker · '+L.toFixed(1)+'s'+(cutK?' (silence cut)':''):'')+'</i>').join('');
   $('t2').innerHTML=broll.filter(b=>b.dur>0).map((b,i)=>'<i data-i="'+broll.indexOf(b)+'" title="Click to remove" style="left:'+pc(b.start)+';width:'+pc(b.dur)+';background:'+cols[b.id%4]+';color:#111">'+b.name+'</i>').join('');
-  $('t3').innerHTML=cues.map(c=>({c,s:otime(c.s),e:otime(c.e)})).filter(x=>x.e>x.s).map(x=>'<i style="left:'+pc(x.s)+';width:'+pc(x.e-x.s)+';background:#555">'+x.c.words.join(' ')+'</i>').join('');
+  $('t3').innerHTML=cues.map(c=>({c,s:otime(c.s),e:otime(c.e)})).filter(x=>x.e>x.s).map(x=>'<i title="'+x.c.words.join(' ').replace(/"/g,'&quot;')+'" style="left:'+pc(x.s)+';width:'+pc(x.e-x.s)+';background:#555">'+x.c.words.join(' ')+'</i>').join('');
   $('t4').innerHTML=sfxT.map((x,i)=>'<i data-x="'+i+'" title="Click to remove" style="left:'+pc(x.t)+';width:'+pc(Math.max(0.25,x.dur))+';background:#ff8f5e;color:#111">'+x.s.name.slice(0,14)+'</i>').join('');
   const bp=bgmPick();$('t5').innerHTML=bp?'<i style="left:0;width:100%;background:#5ec8ff;color:#111">'+bp.name+'</i>':'';
   document.querySelectorAll('#t4 i').forEach(el=>el.onclick=()=>{sfxT.splice(+el.dataset.x,1);renderTL();});
@@ -480,7 +555,7 @@ function autoPlace(){
   if(!segs.length||!broll.length){$('stat').textContent='Need a transcript and B-roll first.';return;}
   broll.forEach(b=>b.dur=0); const a=t0(), L=clipLen(), pool=[...broll]; let k=0, last=-1;
   const inClip=segs.filter(s=>otime(s.e)>otime(s.s)&&otime(s.s)<L);
-  inClip.forEach((s,i)=>{ if(i%2===0)return; const st=otime(s.s), d=Math.min(3,Math.max(1.5,s.e-s.s)); if(st+d>L)return;
+  inClip.forEach((s,i)=>{ if(i%2===0)return; const st=otime(s.s), d=Math.min(brMax(),Math.max(1.5,s.e-s.s)); if(st+d>L)return;
     let b=pool[k%pool.length]; if(pool.length>1&&b.id===last){k++;b=pool[k%pool.length];} k++; last=b.id;
     const copy=b.dur>0?{...b}:b; copy.start=st; copy.dur=d; if(copy!==b)broll.push(copy); });
   renderTL(); draw();
@@ -500,7 +575,7 @@ $('vreset').onclick=()=>{$('vo').value=0;$('cy').value=0;$('cx').value=0.5;draw(
 $('br').onchange=e=>{[...e.target.files].forEach(f=>{const u=URL.createObjectURL(f),isV=f.type.startsWith('video'),el=isV?document.createElement('video'):new Image();
   if(isV){el.muted=true;el.loop=true;el.playsInline=true;el.src=u;el.load();}else el.src=u;
   broll.push({id:broll.length,name:f.name.slice(0,18),type:isV?'video':'image',el,start:0,dur:0});}); $('stat').textContent=broll.length+' B-roll asset(s) loaded.';};
-$('auto').onclick=autoPlace; $('clr').onclick=()=>{broll=[];renderTL();draw();};
+$('auto').onclick=autoPlace; $('clr').onclick=()=>{broll=[];autoOn.br=false;renderTL();draw();};
 $('play').onclick=()=>playing?stop():play();
 $('ruler').onclick=e=>{if(!vid.duration)return;const r=$('ruler').getBoundingClientRect();vid.currentTime=stime(clipLen()*(e.clientX-r.left)/r.width);};
 function legacyExport(){
@@ -578,8 +653,13 @@ async function mixAudio(L){
   const SR=48000,off=new OfflineAudioContext(2,Math.ceil(L*SR),SR),f=$('src').files[0];
   try{const dec=await decodeSrc(f),buf=off.createBuffer(dec.numberOfChannels,dec.length,dec.sampleRate);
     for(let c=0;c<dec.numberOfChannels;c++)buf.copyToChannel(dec.getChannelData(c),c);
+    blIv.forEach(iv=>{const a=Math.max(0,Math.floor(iv.s*dec.sampleRate)),b=Math.min(dec.length,Math.ceil(iv.e*dec.sampleRate));
+      for(let c=0;c<dec.numberOfChannels;c++)buf.getChannelData(c).fill(0,a,b);});
     ranges().forEach(r=>{const n=off.createBufferSource();n.buffer=buf;n.connect(off.destination);n.start(r.o,r.a,r.b-r.a);});
   }catch(e){console.warn('speech audio skipped',e);}
+  blIv.forEach(iv=>{const o1=otime(iv.s),o2=otime(iv.e);if(o2-o1<0.02||o1>=L)return;const os=off.createOscillator(),gn=off.createGain();os.type='sine';os.frequency.value=1000;
+    gn.gain.setValueAtTime(0,o1);gn.gain.linearRampToValueAtTime(0.3,o1+0.004);gn.gain.setValueAtTime(0.3,Math.max(o1+0.004,o2-0.004));gn.gain.linearRampToValueAtTime(0,o2);
+    os.connect(gn);gn.connect(off.destination);os.start(o1);os.stop(o2+0.01);});
   const p=bgmPick();
   if(p){scoreBgm(p,L);const n=off.createBufferSource(),gn=off.createGain();n.buffer=p.buf;n.loop=true;n.connect(gn);gn.connect(off.destination);
     const E=envC||await getEnv().catch(()=>null),base=bgmBase*(+$('bv').value);gn.gain.value=0;let ls=-9;
@@ -638,9 +718,12 @@ function zoomK(rel){const m=$('zm').value;if(m==='none')return 1;const S=$('zs')
 function ensureAudio(){
   if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();
   if(!adest)adest=actx.createMediaStreamDestination();
-  if(!wired){const s=actx.createMediaElementSource(vid);s.connect(actx.destination);s.connect(adest);wired=true;}
+  if(!wired){const s=actx.createMediaElementSource(vid);vG=actx.createGain();s.connect(vG);vG.connect(actx.destination);vG.connect(adest);
+    bpG=actx.createGain();bpG.gain.value=0;const o=actx.createOscillator();o.type='sine';o.frequency.value=1000;o.connect(bpG);bpG.connect(actx.destination);bpG.connect(adest);o.start();wired=true;}
   actx.resume();
 }
+function bleepTick(t){if(!vG||!actx)return;const on=t!=null&&blIv.some(x=>t+0.03>=x.s&&t<x.e),T=actx.currentTime;
+  vG.gain.setTargetAtTime(on?0:1,T,0.004);bpG.gain.setTargetAtTime(on?0.3:0,T,0.004);}
 function outTo(n){n.connect(actx.destination);n.connect(adest);}
 function stopAudio(){try{bgmNode&&bgmNode.stop();}catch(e){}bgmNode=null;live.forEach(n=>{try{n.stop();}catch(e){}});live=[];}
 function bgmPick(){if(!bgmList.length)return null;const v=$('bsel').value;return bgmList.find(b=>b.name===v)||bgmList[0];}
@@ -689,8 +772,116 @@ async function placeSfx(){
   if($('sfxcut').checked){const T=sfxList.filter(x=>x!==H).sort((a,b)=>b.ts-a.ts);
     if(T.length)broll.filter(b=>b.dur>0).sort((a,b)=>a.start-b.start).forEach((b,i)=>addSfx(T[i%T.length],b.start,0.6));}
   renderTL();$('stat').textContent='Hook SFX "'+H.name+'" lands on the first spoken word at '+hit.toFixed(2)+'s.';}
+/* ---- Auto B-roll from captions: keyword in caption -> clip with that name in the "broll" folder ---- */
+const brAssets=new Map();let brSeq=1000,brBusy=false,brAgain=false;
+let brRules=[];try{brRules=JSON.parse(localStorage.getItem('brRules')||'[]').filter(r=>r&&Array.isArray(r.w)&&r.t);}catch(e){brRules=[];}
+const brEsc=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function brSaveRules(){try{localStorage.setItem('brRules',JSON.stringify(brRules));}catch(e){}}
+function brRenderRules(){
+  $('brrules').innerHTML=brRules.length?brRules.map((r,i)=>'<div style="display:flex;gap:6px;align-items:center;justify-content:space-between;margin-top:4px"><span>'+brEsc(r.w.join(', '))+' → <b>'+brEsc(r.t)+'</b></span><button type="button" data-i="'+i+'" style="padding:2px 8px">×</button></div>').join(''):'No custom words yet. Built-in matching already uses each clip\'s filename.';
+  $('brrules').querySelectorAll('button').forEach(b=>b.onclick=()=>{brRules.splice(+b.dataset.i,1);brSaveRules();brRenderRules();if(autoOn.br)autoBroll(true);});}
+function brFillTargets(files){const ks=new Set();files.forEach(f=>{ks.add(brKey(f.name).join(' '));});
+  $('brtl').innerHTML=[...ks].filter(Boolean).map(k=>'<option value="'+brEsc(k)+'">').join('');}
+$('bradd').onclick=()=>{
+  const w=$('brw').value.split(/[,;\n]+/).map(x=>x.trim().toLowerCase()).filter(Boolean),t=$('brt').value.trim();
+  if(!w.length||!t){$('brn').textContent='Type the caption word(s) and the B-roll name, then press Add word rule.';return;}
+  brRules.push({w,t});brSaveRules();brRenderRules();$('brw').value='';$('brt').value='';
+  if(autoOn.br)autoBroll(true);else $('brn').textContent='Rule added. Press "Auto B-roll from captions" to apply it.';};
+brRenderRules();
+fetch('/api/broll',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{if(j&&j.files)brFillTargets(j.files);}).catch(()=>{});
+const brMax=()=>{const v=+$('brmax').value;return v>0?v:2;};
+const BR_ALIAS={injection:['needle','syringe','pinning'],blood:['bloodwork','bleeding','bloodstream'],heart:['cardiac','cardiovascular'],muscle:['bicep','biceps','gains'],fire:['flame','flames','burn','burning']};
+function brStem(w){w=String(w).toLowerCase().replace(/[^a-z0-9]/g,'');
+  for(const x of ['ings','ing','ions','ion','ers','er','ed','es','s']){if(w.length-x.length>=4&&w.endsWith(x)){w=w.slice(0,-x.length);break;}}
+  if(w.length>=4&&w.endsWith('e'))w=w.slice(0,-1);return w;}
+/* "blood_01.mp4", "blood1.mp4", "blood-2.mov", "blood (3).gif" -> ["blood"] */
+function brKey(name){let b=name.replace(/\.[^.]+$/,'').toLowerCase();
+  for(let i=0;i<3;i++)b=b.replace(/[\s_\-.]*(?:\(\s*\d+\s*\)|\d+|copy)\s*$/,'');
+  return b.split(/[\s_\-.]+/).filter(x=>x&&!/^\d+$/.test(x));}
+function brIndex(files,rules){
+  const AL={};Object.keys(BR_ALIAS).forEach(k=>{AL[brStem(k)]=BR_ALIAS[k];});
+  const keys=new Map();
+  files.forEach(f=>{const t=brKey(f.name);if(!t.length)return;const k=t.join(' ');
+    if(!keys.has(k))keys.set(k,{key:k,toks:t.map(brStem),files:[]});keys.get(k).files.push(f);});
+  keys.forEach(K=>K.files.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true})));
+  const pats=[],own=new Map(),missing=[];
+  (rules||[]).forEach(r=>{const t=String(r.t).trim().toLowerCase();if(!t)return;let K=null;
+    const bare=x=>x.replace(/\.[^.]+$/,'');
+    const f=files.find(x=>x.name.toLowerCase()===t||bare(x.name.toLowerCase())===t);
+    if(f)K={key:bare(f.name),toks:[],files:[f]};
+    else K=keys.get(brKey(t).join(' '))||[...keys.values()].find(k=>k.toks.join(' ')===brKey(t).map(brStem).join(' '))||null;
+    if(!K){missing.push(r.t);return;}
+    r.w.forEach(w=>{const toks=w.trim().split(/\s+/).map(brStem).filter(Boolean);if(toks.length)pats.push({toks,K});});});
+  keys.forEach(K=>{pats.push({toks:K.toks,K});
+    if(K.toks.length===1)(AL[K.toks[0]]||[]).forEach(a=>pats.push({toks:[brStem(a)],K}));
+    K.toks.forEach(t=>{if(!own.has(t))own.set(t,new Set());own.get(t).add(K);});});
+  keys.forEach(K=>{if(K.toks.length>1)K.toks.forEach(t=>{if(t.length>=4&&own.get(t).size===1)pats.push({toks:[t],K});});});
+  pats.sort((a,b)=>b.toks.length-a.toks.length);
+  return{keys,pats,missing};}
+function brEvents(idx,W,R,ot){
+  const st=W.map(x=>brStem(x.t)),ev=[];
+  for(let i=0;i<W.length;i++){
+    if(!st[i]||!R.some(r=>W[i].s>=r.a-0.01&&W[i].s<=r.b))continue;
+    for(const p of idx.pats){
+      if(i+p.toks.length>W.length)continue;
+      if(p.toks.every((t,k)=>st[i+k]===t)){ev.push({K:p.K,w:W[i].t,t:ot(W[i].s)});i+=p.toks.length-1;break;}}}
+  return ev;}
+function brPlan(ev,maxD,L){
+  const out=[],rr=new Map();let prev=null;ev.sort((a,b)=>a.t-b.t);
+  for(const e of ev){
+    const st=Math.max(0,e.t-0.1);
+    if(prev){
+      if(e.K===prev.K&&st<prev.start+prev.dur+1)continue;
+      if(st<prev.start+prev.dur){const room=st-prev.start;if(room>=0.6)prev.dur=room;else continue;}}
+    const i=rr.get(e.K)||0,f=e.K.files[i%e.K.files.length];rr.set(e.K,i+1);
+    const a=f._a;if(!a)continue;
+    const d=Math.min(maxD,(a.type==='video'&&a.dur>0)?a.dur:maxD,L-st);
+    if(d<0.3)continue;
+    const it={f,a,start:st,dur:d,K:e.K,w:e.w};out.push(it);prev=it;}
+  return out;}
+async function brLoad(files){
+  for(const f of files){
+    const key=f.url+'|'+f.mtime+'|'+f.size;
+    if(brAssets.has(key)){f._a=brAssets.get(key);continue;}
+    try{
+      const r=await fetch(f.url);if(!r.ok)throw new Error('HTTP '+r.status);
+      const u=URL.createObjectURL(await r.blob()),isV=/\.(mp4|mov|webm|m4v)$/i.test(f.name);let el;
+      if(isV){el=document.createElement('video');el.muted=true;el.loop=true;el.playsInline=true;el.preload='auto';el.src=u;
+        await new Promise(res=>{el.onloadedmetadata=res;el.onerror=res;setTimeout(res,8000);});}
+      else{el=new Image();el.src=u;await new Promise(res=>{el.onload=res;el.onerror=res;setTimeout(res,8000);});}
+      const a={type:isV?'video':'image',el,dur:isV?(el.duration||0):0};brAssets.set(key,a);f._a=a;
+    }catch(e){console.warn('B-roll skipped',f.name,e);}}}
+async function autoBroll(fromQueue){
+  if(brBusy){brAgain=true;return;}
+  brBusy=true;const n=$('brn');
+  try{
+    if(!cues.length){n.textContent='Need captions first: use Auto-transcribe or paste a transcript, then press this again.';return;}
+    n.textContent='Scanning the B-roll folder…';
+    let j;try{const r=await fetch('/api/broll',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);j=await r.json();}
+    catch(e){n.textContent='Cannot reach the editor server ('+(e.message||e)+'). Close old start_editor.py windows, save the NEW start_editor.py, run it again and use the tab it opens.';return;}
+    const files=j.files||[];
+    if(!files.length){n.textContent='No B-roll found. Create a folder named "'+(j.folder||'broll')+'" next to start_editor.py and put your clips in it (e.g. blood_01.mp4, heart1.mp4).';return;}
+    autoOn.br=true;
+    brFillTargets(files);const idx=brIndex(files,brRules),W=[];cues.forEach(c=>c.wt.forEach(x=>W.push(x)));W.sort((a,b)=>a.s-b.s);
+    const ev=brEvents(idx,W,ranges(),otime),need=new Set();ev.forEach(e=>e.K.files.forEach(f=>need.add(f)));
+    n.textContent='Loading '+need.size+' matching clip(s)…';
+    await brLoad([...need]);
+    const plan=brPlan(ev,brMax(),clipLen());
+    broll=broll.filter(b=>!b.auto);broll.forEach(b=>b.dur=0);
+    plan.forEach(p=>broll.push({id:brSeq++,name:p.f.name.slice(0,18),type:p.a.type,el:p.a.el,start:p.start,dur:p.dur,auto:true}));
+    renderTL();draw();
+    const cnt={};plan.forEach(p=>{cnt[p.K.key]=(cnt[p.K.key]||0)+1;});
+    const used=Object.keys(cnt).map(k=>k+' ×'+cnt[k]).join(', '),all=[...idx.keys.keys()].join(', ');
+    const miss=idx.missing.length?' No clip found for rule target: '+idx.missing.join(', ')+'.':'';
+    n.textContent=(plan.length?'Placed '+plan.length+' clip(s), max '+brMax()+'s each: '+used+'.':'No caption word matched a B-roll filename.')+' Keywords available: '+all+'.'+miss;
+    $('stat').textContent=plan.length?plan.length+' B-roll clip(s) inserted from captions.':'No keyword matches in the captions.';
+    if(!fromQueue&&autoOn.sfx&&$('sfxcut').checked)await placeSfx();
+  }finally{brBusy=false;if(brAgain){brAgain=false;setTimeout(()=>autoBroll(true),0);}}
+}
+$('brauto').onclick=()=>autoBroll(false);
+$('brmax').onchange=()=>{const m=brMax();broll.forEach(b=>{if(b.dur>m)b.dur=m;});renderTL();draw();if(autoOn.br)autoBroll(true);};
 /* ---- Auto library: start_editor.py re-scans the folders on every request, the editor scores + applies ---- */
-const autoOn={bgm:false,sfx:false},anCache=new Map();let libBusy=null,qT=0;
+const autoOn={bgm:false,sfx:false,br:false},anCache=new Map();let libBusy=null,qT=0;
 const libNote=t=>{$('libn').textContent=t;Task.msg(t);};
 const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function srvDown(e){
@@ -741,8 +932,8 @@ async function autoHook(){
   if(!sfxList.length){autoOn.sfx=false;libNote('No audio files found in the "best hook" folder.');return false;}
   await placeSfx();$('stat').textContent+=' Press Preview to hear it.';return true;}
 /* when start time, length, silence-cut or transcript change, redo whatever the user switched to Auto */
-function queueAuto(){if(!autoOn.bgm&&!autoOn.sfx)return;clearTimeout(qT);
-  qT=setTimeout(async()=>{if(autoOn.bgm)await autoBgm();if(autoOn.sfx)await placeSfx();},200);}
+function queueAuto(){if(!autoOn.bgm&&!autoOn.sfx&&!autoOn.br)return;clearTimeout(qT);
+  qT=setTimeout(async()=>{if(autoOn.br)await autoBroll(true);if(autoOn.bgm)await autoBgm();if(autoOn.sfx)await placeSfx();},200);}
 autoBgm=wrapTask(autoBgm,'Auto BGM','bgmbtn','music applied');
 autoHook=wrapTask(autoHook,'Auto Hook SFX','sfxbtn','hook SFX applied');
 {const _rc=recut;recut=async function(){if(!$('cut').checked)return _rc();Task.begin('Analyzing audio for silence');
